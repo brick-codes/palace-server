@@ -1,0 +1,9 @@
+[package]
+name = "palace-server"
+version = "0.1.0"
+authors = ["Richard McCormack <rmccormack@ebsco.com>"]
+
+[dependencies]
+hyper = { git = "https://github.com/hyperium/hyper" }
+rand = "0.5"
+snowflake = "1"
