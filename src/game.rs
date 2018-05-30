@@ -31,18 +31,31 @@ enum CardValue {
 const VALUES: [CardValue; 13] = [CardValue::Two, CardValue::Three, CardValue::Four, CardValue::Five, CardValue::Six, CardValue::Seven, CardValue::Eight, CardValue::Nine, CardValue::Ten, CardValue::Jack, CardValue::Queen, CardValue::King, CardValue::Ace];
 
 #[derive(Copy, Clone, Debug, Serialize)]
-struct Card {
+pub struct Card {
     value: CardValue,
     suit: CardSuit
 }
 
-pub enum Game {
-    Setup(SetupGameState),
-    Play(PlayGameState)
+pub type CardTriplet = (Option<Card>, Option<Card>, Option<Card>);
+
+#[derive(Copy, Clone, Debug, Serialize)]
+pub enum GamePhase {
+    Setup,
+    Play
 }
 
-impl Game {
-    fn new(num_players: u8) -> Game {
+pub struct GameState {
+    active_player: u8,
+    hands: Box<[Vec<Card>]>,
+    face_up_three: Box<[CardTriplet]>,
+    face_down_three: Box<[CardTriplet]>,
+    cleared_cards: Vec<Card>,
+    pile_cards: Vec<Card>,
+    cur_phase: GamePhase,
+}
+
+impl GameState {
+    fn new(num_players: u8) -> GameState {
         let mut deck: Vec<Card> = VALUES.iter().cycle().take(num_players as usize * VALUES.len()).zip(SUITS.iter().cycle()).map(|(value, suit)| Card { suit: *suit, value: *value }).collect();
         rand::thread_rng().shuffle(&mut deck);
         let mut deck = deck.into_iter();
@@ -54,74 +67,17 @@ impl Game {
             face_up_three.push((Some(deck.next().unwrap()), Some(deck.next().unwrap()), Some(deck.next().unwrap())));
             hands.push(deck.by_ref().take(6).collect());
         }
-        let game_state = GameState {
+        GameState {
             active_player: 0,
             hands: hands.into_boxed_slice(),
             face_down_three: face_down_three.into_boxed_slice(),
             face_up_three: face_up_three.into_boxed_slice(),
             cleared_cards: Vec::new(),
             pile_cards: Vec::new(),
-        };
-        Game::Setup(SetupGameState {
-            inner: game_state
-        })
+            cur_phase: GamePhase::Setup,
+        }
     }
-}
 
-struct SetupGameState {
-    inner: GameState
-}
-
-struct PlayGameState {
-    inner: GameState
-}
-
-impl Deref for SetupGameState {
-    type Target = GameState;
-
-    fn deref(&self) -> &GameState {
-        &self.inner
-    }
-}
-
-impl Deref for PlayGameState {
-    type Target = GameState;
-
-    fn deref(&self) -> &GameState {
-        &self.inner
-    }
-}
-
-impl DerefMut for SetupGameState {
-    fn deref_mut(&mut self) -> &mut GameState {
-        &mut self.inner
-    }
-}
-
-impl DerefMut for PlayGameState {
-    fn deref_mut(&mut self) -> &mut GameState {
-        &mut self.inner
-    }
-}
-
-impl SetupGameState {
-    fn set_three_face_up(&mut self, card_to_keep1: Card, card_to_keep2: Card, card_to_keep3: Card) {
-        let new_face_up_cards = (Some(card_to_keep1), Some(card_to_keep2), Some(card_to_keep3));
-    }
-}
-
-type CardTriplet = (Option<Card>, Option<Card>, Option<Card>);
-
-struct GameState {
-    active_player: u8,
-    hands: Box<[Vec<Card>]>,
-    face_up_three: Box<[CardTriplet]>,
-    face_down_three: Box<[CardTriplet]>,
-    cleared_cards: Vec<Card>,
-    pile_cards: Vec<Card>,
-}
-
-impl GameState {
     fn public_state(&self) -> PublicGameState {
         let mut face_up_cards = vec![];
         for triplet in self.face_up_three.iter() {
@@ -155,7 +111,8 @@ impl GameState {
             face_down_three: face_down_cards.into_boxed_slice(),
             top_card: self.pile_cards.last().cloned(),
             pile_size: self.pile_cards.len(),
-            cleared_size: self.cleared_cards.len()
+            cleared_size: self.cleared_cards.len(),
+            cur_phase: self.cur_phase
         }
     }
 }
@@ -168,6 +125,7 @@ struct PublicGameState {
     top_card: Option<Card>,
     pile_size: usize,
     cleared_size: usize,
+    cur_phase: GamePhase
 }
 
 mod test {
@@ -175,11 +133,8 @@ mod test {
 
     #[test]
     fn test_new_game() {
-        let new_game = Game::new(4);
-        let pub_state = match new_game {
-            Game::Setup(inner) => inner.public_state(),
-            Game::Play(inner) => inner.public_state(),
-        };
+        let new_game = GameState::new(4);
+        let pub_state = new_game.public_state();
         let serialized = ::serde_json::to_string(&pub_state).unwrap();
         println!("{}", serialized);
     }
