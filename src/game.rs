@@ -95,13 +95,13 @@ impl GameState {
         let mut face_down_cards: Vec<u8> = vec![];
         for triplet in self.face_down_three.iter() {
             face_down_cards.push(0);
-            if let Some(card) = triplet.0 {
+            if triplet.0.is_some() {
                 *face_down_cards.last_mut().unwrap() += 1
             }
-            if let Some(card) = triplet.1 {
+            if triplet.1.is_some() {
                 *face_down_cards.last_mut().unwrap() += 1
             }
-            if let Some(card) = triplet.2 {
+            if triplet.2.is_some() {
                 *face_down_cards.last_mut().unwrap() += 1
             }
         }
