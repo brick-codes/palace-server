@@ -2,6 +2,12 @@ extern crate hyper;
 extern crate rand;
 extern crate snowflake;
 
+#[macro_use]
+extern crate serde_derive;
+
+extern crate serde;
+extern crate serde_json;
+
 mod game;
 mod lobby;
 
@@ -59,13 +65,13 @@ fn main() {
         players: HashMap::new(),
     };
 
-    let addr = ([127, 0, 0, 1], 80).into();
+    //let addr = ([127, 0, 0, 1], 80).into();
 
-    let server = Server::bind(&addr)
-        .serve(|| service_fn(move |req| { palace_serve(req, &mut server_state) }))
-        .map_err(|e| eprintln!("server error: {}", e));
+    //let server = Server::bind(&addr)
+    //    .serve(|| service_fn(move |req| { palace_serve(req, &mut server_state) }))
+    //    .map_err(|e| eprintln!("server error: {}", e));
 
-    println!("Listening on http://{}", addr);
+    //println!("Listening on http://{}", addr);
 
-hyper::rt::run(server);
+    //hyper::rt::run(server);
 }

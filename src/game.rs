@@ -1,7 +1,7 @@
 use rand::{self, Rng};
 use std::ops::{Deref, DerefMut};
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize)]
 enum CardSuit {
     Clubs,
     Diamonds,
@@ -11,7 +11,7 @@ enum CardSuit {
 
 const SUITS: [CardSuit; 4] = [CardSuit::Clubs, CardSuit::Diamonds, CardSuit::Hearts, CardSuit::Spades];
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize)]
 enum CardValue {
     Two,
     Three,
@@ -30,6 +30,7 @@ enum CardValue {
 
 const VALUES: [CardValue; 13] = [CardValue::Two, CardValue::Three, CardValue::Four, CardValue::Five, CardValue::Six, CardValue::Seven, CardValue::Eight, CardValue::Nine, CardValue::Ten, CardValue::Jack, CardValue::Queen, CardValue::King, CardValue::Ace];
 
+#[derive(Copy, Clone, Debug, Serialize)]
 struct Card {
     value: CardValue,
     suit: CardSuit
@@ -59,6 +60,7 @@ impl Game {
             face_down_three: face_down_three.into_boxed_slice(),
             face_up_three: face_up_three.into_boxed_slice(),
             cleared_cards: Vec::new(),
+            pile_cards: Vec::new(),
         };
         Game::Setup(SetupGameState {
             inner: game_state
@@ -115,7 +117,57 @@ struct GameState {
     hands: Box<[Vec<Card>]>,
     face_up_three: Box<[CardTriplet]>,
     face_down_three: Box<[CardTriplet]>,
-    cleared_cards: Vec<Card>
+    cleared_cards: Vec<Card>,
+    pile_cards: Vec<Card>,
+}
+
+impl GameState {
+    fn public_state(&self) -> PublicGameState {
+        let mut face_up_cards = vec![];
+        for triplet in self.face_up_three.iter() {
+            face_up_cards.push(Vec::new());
+            if let Some(card) = triplet.0 {
+                face_up_cards.last_mut().unwrap().push(card)
+            }
+            if let Some(card) = triplet.1 {
+                face_up_cards.last_mut().unwrap().push(card)
+            }
+            if let Some(card) = triplet.2 {
+                face_up_cards.last_mut().unwrap().push(card)
+            }
+        }
+        let mut face_down_cards: Vec<u8> = vec![];
+        for triplet in self.face_down_three.iter() {
+            face_down_cards.push(0);
+            if let Some(card) = triplet.0 {
+                *face_down_cards.last_mut().unwrap() += 1
+            }
+            if let Some(card) = triplet.1 {
+                *face_down_cards.last_mut().unwrap() += 1
+            }
+            if let Some(card) = triplet.2 {
+                *face_down_cards.last_mut().unwrap() += 1
+            }
+        }
+        PublicGameState {
+            hands: self.hands.iter().map(|x| x.len()).collect::<Vec<_>>().into_boxed_slice(),
+            face_up_three: face_up_cards.into_boxed_slice(),
+            face_down_three: face_down_cards.into_boxed_slice(),
+            top_card: self.pile_cards.last().cloned(),
+            pile_size: self.pile_cards.len(),
+            cleared_size: self.cleared_cards.len()
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct PublicGameState {
+    hands: Box<[usize]>,
+    face_up_three: Box<[Vec<Card>]>,
+    face_down_three: Box<[u8]>,
+    top_card: Option<Card>,
+    pile_size: usize,
+    cleared_size: usize,
 }
 
 mod test {
@@ -124,5 +176,11 @@ mod test {
     #[test]
     fn test_new_game() {
         let new_game = Game::new(4);
+        let pub_state = match new_game {
+            Game::Setup(inner) => inner.public_state(),
+            Game::Play(inner) => inner.public_state(),
+        };
+        let serialized = ::serde_json::to_string(&pub_state).unwrap();
+        println!("{}", serialized);
     }
 }
