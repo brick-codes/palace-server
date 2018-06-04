@@ -55,7 +55,7 @@ pub struct GameState {
 }
 
 impl GameState {
-    fn new(num_players: u8) -> GameState {
+    pub fn new(num_players: u8) -> GameState {
         let mut deck: Vec<Card> = VALUES.iter().cycle().take(num_players as usize * VALUES.len()).zip(SUITS.iter().cycle()).map(|(value, suit)| Card { suit: *suit, value: *value }).collect();
         rand::thread_rng().shuffle(&mut deck);
         let mut deck = deck.into_iter();
@@ -78,7 +78,7 @@ impl GameState {
         }
     }
 
-    fn public_state(&self) -> PublicGameState {
+    pub fn public_state(&self) -> PublicGameState {
         let mut face_up_cards = vec![];
         for triplet in self.face_up_three.iter() {
             face_up_cards.push(Vec::new());
@@ -107,25 +107,31 @@ impl GameState {
         }
         PublicGameState {
             hands: self.hands.iter().map(|x| x.len()).collect::<Vec<_>>().into_boxed_slice(),
-            face_up_three: face_up_cards.into_boxed_slice(),
+            face_up_three: face_up_cards.into_iter().map(|x| x.into_boxed_slice()).collect::<Vec<_>>().into_boxed_slice(),
             face_down_three: face_down_cards.into_boxed_slice(),
             top_card: self.pile_cards.last().cloned(),
             pile_size: self.pile_cards.len(),
             cleared_size: self.cleared_cards.len(),
-            cur_phase: self.cur_phase
+            cur_phase: self.cur_phase,
+            active_player: self.active_player
         }
     }
 }
 
 #[derive(Serialize)]
-struct PublicGameState {
+pub struct PublicGameState {
     hands: Box<[usize]>,
-    face_up_three: Box<[Vec<Card>]>,
+    face_up_three: Box<[Box<[Card]>]>,
     face_down_three: Box<[u8]>,
     top_card: Option<Card>,
     pile_size: usize,
     cleared_size: usize,
-    cur_phase: GamePhase
+    cur_phase: GamePhase,
+    active_player: u8
+}
+
+pub struct PrivateGameState {
+    hand: Box<[Card]>,
 }
 
 mod test {

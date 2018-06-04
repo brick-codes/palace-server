@@ -4,7 +4,8 @@ version = "0.1.0"
 authors = ["Richard McCormack <rmccormack@ebsco.com>"]
 
 [dependencies]
-hyper = { git = "https://github.com/hyperium/hyper" }
+rocket = "0.3"
+rocket_codegen = "0.3"
 rand = "0.5"
 snowflake = "1"
 serde = "1"

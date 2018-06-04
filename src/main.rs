@@ -1,4 +1,7 @@
-extern crate hyper;
+#![feature(plugin, decl_macro)]
+#![plugin(rocket_codegen)]
+
+#[macro_use] extern crate rocket;
 extern crate rand;
 extern crate snowflake;
 
@@ -11,13 +14,10 @@ extern crate serde_json;
 mod game;
 mod lobby;
 
-use hyper::{Body, Method, Request, Response, Server, StatusCode};
-use hyper::service::service_fn_ok;
-use hyper::rt::Future;
 use lobby::Lobby;
 use snowflake::ProcessUniqueId;
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 #[derive(PartialEq, Eq, Hash)]
 struct PlayerId(ProcessUniqueId);
@@ -38,7 +38,8 @@ impl LobbyId {
 }
 
 struct Player {
-    active_lobby: LobbyId
+    active_lobby: LobbyId,
+    name: String
 }
 
 struct ServerState {
@@ -46,10 +47,29 @@ struct ServerState {
     players: HashMap<PlayerId, Player>
 }
 
-fn palace_serve(req: Request<Body>, server_state: &RwLock<ServerState>) -> Response<Body> {
-   match (req.method(), req.uri().path()) {
+#[derive(Deserialize)]
+struct NewUserMessage {
+    name: String
+}
+
+#[derive(Deserialize)]
+enum Message {
+    NewUser(NewUserMessage)
+}
+
+fn palace_serve(req: Request<Body>) -> Response<Body> {
+    let a = unsafe { SERVER_STATE.clone().unwrap() };
+    match (req.method(), req.uri().path()) {
         (&Method::GET, _) => {
-            Response::new(Body::from("hello"))
+            let new_game = game::GameState::new(4);
+            let pub_state = new_game.public_state();
+            let serialized = ::serde_json::to_string(&pub_state).unwrap();
+            Response::new(Body::from(serialized))
+        },
+        (&Method::POST, "/api") => {
+            // Deserialize Message with serde
+            let m: Message = serde_json::from_slice::<Message>(req.body()).unwrap();
+            Response::new("hello".into())
         },
         _ => {
             let mut res = Response::new(Body::empty());
@@ -59,20 +79,21 @@ fn palace_serve(req: Request<Body>, server_state: &RwLock<ServerState>) -> Respo
     }
 }
 
+#[post("/", data = "<message>")]
+fn api(server_state: State<T>, message: Json<Message>) -> &'static str  {
+    match message {
+        Message::NewUserMessage => {
+            "hello"
+        }
+    }
+}
+
 fn main() {
-    // TODO PERF could be FmvMaps, test perf
-    let server_state = RwLock::new(ServerState {
+    // @Performance should be a concurrent hash map, FMV hashing could be good as well
+    let server_state = Arc::new(RwLock::new(ServerState {
         lobbies: HashMap::new(),
         players: HashMap::new(),
-    });
+    }));
 
-    let addr = ([127, 0, 0, 1], 80).into();
-
-    let server = Server::bind(&addr)
-        .serve(|| service_fn_ok(|req| { palace_serve(req, &server_state) }))
-        .map_err(|e| eprintln!("server error: {}", e));
-
-    println!("Listening on http://{}", addr);
-
-    hyper::rt::run(server);
+    rocket::ignite().manage(server_state).mount("/", routes![index]).launch();
 }
