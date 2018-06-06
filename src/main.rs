@@ -26,35 +26,61 @@ struct PlayerId(u128);
 struct LobbyId(u128);
 
 struct Lobby {
-    players: Vec<PlayerId>,
-    game: GameState,
+    players: HashMap<PlayerId, Player>,
+    max_players: u8,
+    password: String,
+    game: Option<GameState>,
+    owner: PlayerId,
+    name: String,
+}
+
+impl Lobby {
+    fn display(&self) -> LobbyDisplay {
+        LobbyDisplay {
+            cur_players: self.players.len() as u8,
+            max_players: self.max_players,
+            started: self.game.is_some(),
+            has_password: !self.password.is_empty(),
+            owner: &self.players.get(&self.owner).unwrap().name,
+            name: &self.name,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct LobbyDisplay<'a> {
+    cur_players: u8,
+    max_players: u8,
+    started: bool,
+    has_password: bool,
+    owner: &'a str,
+    name: &'a str,
 }
 
 struct Player {
-    active_lobby: Option<LobbyId>,
     name: String,
-    last_active: Instant,
 }
 
 struct ServerState {
     lobbies: RwLock<HashMap<LobbyId, Lobby>>,
-    players: RwLock<HashMap<PlayerId, Player>>,
-}
-
-#[derive(Deserialize)]
-struct NewUserMessage {
-    name: String,
 }
 
 #[derive(Deserialize)]
 struct NewLobbyMessage {
+    max_players: u8,
+    password: String,
+    lobby_name: String,
+    player_name: String,
+}
+
+#[derive(Serialize)]
+struct NewLobbyResponse {
     player_id: PlayerId,
-    num_players: u8,
+    lobby_id: LobbyId,
 }
 
 #[derive(Deserialize)]
 enum Message {
-    NewUser(NewUserMessage),
     NewLobby(NewLobbyMessage),
 }
 
@@ -64,63 +90,50 @@ fn api(
     message: Json<Message>,
 ) -> rocket::response::content::Json<String> {
     match message.into_inner() {
-        Message::NewUser(message) => {
-            let player_id = PlayerId(rand::random());
-            server_state.players.write().unwrap().insert(
-                player_id,
-                Player {
-                    name: message.name,
-                    active_lobby: None,
-                    last_active: Instant::now(),
-                },
-            );
-            rocket::response::content::Json(serde_json::to_string(&player_id).unwrap())
-        }
         Message::NewLobby(message) => {
             let lobby_id = LobbyId(rand::random());
-            let mut players = server_state.players.write().unwrap();
+            let player_id = PlayerId(rand::random());
             let mut lobbies = server_state.lobbies.write().unwrap();
-            // TODO: assert player is actually valid
-            let player = players.get_mut(&message.player_id).unwrap();
-            if let Some(old_lobby_id) = player.active_lobby {
-                let old_lobby_remaining_players = {
-                    let old_lobby = lobbies.get_mut(&old_lobby_id).unwrap();
-                    old_lobby.players = old_lobby
-                        .players
-                        .iter()
-                        .filter(|x| *x != &message.player_id)
-                        .map(|x| *x)
-                        .collect();
-                    old_lobby.players.len()
-                };
-                if old_lobby_remaining_players == 0 {
-                    lobbies.remove(&old_lobby_id);
-                }
-            }
-            player.last_active = Instant::now();
-            player.active_lobby = Some(lobby_id);
+            let mut players = HashMap::new();
+            players.insert(
+                player_id,
+                Player {
+                    name: message.player_name,
+                },
+            );
             lobbies.insert(
                 lobby_id,
                 Lobby {
-                    players: vec![message.player_id],
-                    game: GameState::new(message.num_players),
+                    players: players,
+                    game: None,
+                    password: message.password,
+                    name: message.lobby_name,
+                    owner: player_id,
+                    max_players: message.max_players,
                 },
             );
-            rocket::response::content::Json(serde_json::to_string(&lobby_id).unwrap())
+            rocket::response::content::Json(
+                serde_json::to_string(&NewLobbyResponse {
+                    player_id: player_id,
+                    lobby_id: lobby_id,
+                }).unwrap(),
+            )
         }
     }
 }
 
 #[get("/lobbies")]
-fn lobbies(server_state: State<ServerState>) -> Json<Vec<LobbyId>> {
-    Json(
-        server_state
-            .lobbies
-            .read()
-            .unwrap()
-            .keys()
-            .map(|x| *x)
-            .collect(),
+fn lobbies(server_state: State<ServerState>) -> rocket::response::content::Json<String> {
+    rocket::response::content::Json(
+        serde_json::to_string(
+            &server_state
+                .lobbies
+                .read()
+                .unwrap()
+                .values()
+                .map(|x| x.display())
+                .collect::<Vec<_>>(),
+        ).unwrap(),
     )
 }
 
@@ -128,7 +141,6 @@ fn main() {
     // @Performance should be a concurrent hash map, FNV hashing could be good as well
     let server_state = ServerState {
         lobbies: RwLock::new(HashMap::new()),
-        players: RwLock::new(HashMap::new()),
     };
 
     rocket::ignite()
