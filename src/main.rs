@@ -1,23 +1,19 @@
-#![feature(plugin, decl_macro)]
-#![plugin(rocket_codegen)]
+#![feature(catch_expr)]
 
 extern crate rand;
-extern crate rocket;
-extern crate rocket_contrib;
 #[macro_use]
 extern crate serde_derive;
 extern crate serde;
 extern crate serde_json;
+extern crate ws;
 
 mod game;
 
 use game::GameState;
-use rocket::State;
-use rocket_contrib::Json;
 use serde::{Deserialize, Deserializer, Serializer};
 use std::collections::HashMap;
-use std::sync::RwLock;
 use std::time::Instant;
+use ws::{listen, Handler, Handshake, Sender, Message, CloseCode};
 
 #[derive(PartialEq, Eq, Hash, Serialize, Deserialize, Clone, Copy)]
 struct PlayerId(#[serde(serialize_with = "as_hex_str", deserialize_with = "hex_to_u128")] u128);
@@ -83,10 +79,6 @@ struct Player {
     name: String,
 }
 
-struct ServerState {
-    lobbies: RwLock<HashMap<LobbyId, Lobby>>,
-}
-
 #[derive(Deserialize)]
 struct NewLobbyMessage {
     max_players: u8,
@@ -120,125 +112,127 @@ struct StartGameMessage {
 }
 
 #[derive(Deserialize)]
-enum Message {
+enum PalaceMessage {
     NewLobby(NewLobbyMessage),
     JoinLobby(JoinLobbyMessage),
+    ListLobbies,
     StartGame(StartGameMessage),
 }
 
-#[post("/api", format = "application/json", data = "<message>")]
-fn api(
-    server_state: State<ServerState>,
-    message: Json<Message>,
-) -> rocket::response::content::Json<String> {
-    match message.into_inner() {
-        Message::NewLobby(message) => {
-            let lobby_id = LobbyId(rand::random());
-            let player_id = PlayerId(rand::random());
-            let mut lobbies = server_state.lobbies.write().unwrap();
-            let mut players = HashMap::new();
-            players.insert(
-                player_id,
-                Player {
-                    name: message.player_name,
-                },
-            );
-            lobbies.insert(
-                lobby_id,
-                Lobby {
-                    players: players,
-                    game: None,
-                    password: message.password,
-                    name: message.lobby_name,
-                    owner: player_id,
-                    max_players: message.max_players,
-                    creation_time: Instant::now(),
-                },
-            );
-            rocket::response::content::Json(
-                serde_json::to_string(&NewLobbyResponse {
-                    player_id: player_id,
-                    lobby_id: lobby_id,
-                }).unwrap(),
-            )
-        }
-        Message::JoinLobby(message) => {
-            let mut lobbies = server_state.lobbies.write().unwrap();
-            let mut lobby_opt = lobbies.get_mut(&message.lobby_id);
-            if let Some(lobby) = lobby_opt {
-                if lobby.game.is_some() {
-                    return rocket::response::content::Json("game has started".into());
-                }
-                if lobby.password != message.password {
-                    return rocket::response::content::Json("bad password".into());
-                }
-                if lobby.players.len() as u8 >= lobby.max_players {
-                    return rocket::response::content::Json("lobby is full".into());
-                }
-                let player_id = PlayerId(rand::random());
-                lobby.players.insert(
-                    player_id,
-                    Player {
-                        name: message.player_name,
-                    },
-                );
-                rocket::response::content::Json(
-                    serde_json::to_string(&JoinLobbyResponse {
-                        player_id: player_id,
-                    }).unwrap(),
-                )
-            } else {
-                rocket::response::content::Json("lobby does not exist".into())
+struct Server {
+    out: Sender,
+    lobbies: HashMap<LobbyId, Lobby>
+}
+
+impl Handler for Server {
+
+    fn on_message(&mut self, msg: Message) -> ws::Result<()> {
+        match msg {
+            Message::Text(_) => {
+                self.out.close(CloseCode::Unsupported)
             }
-        }
-        Message::StartGame(message) => {
-            let mut lobbies = server_state.lobbies.write().unwrap();
-            let lobby_opt = lobbies.get_mut(&message.lobby_id);
-            if let Some(lobby) = lobby_opt {
-                if message.player_id != lobby.owner {
-                    return rocket::response::content::Json(
-                        "must be the owner to start game".into(),
-                    );
+            Message::Binary(binary) => {
+                if let Ok(message) = serde_json::from_slice::<PalaceMessage>(&binary) {
+                    let response: Result<Vec<u8>, serde_json::Error> = match message {
+                        PalaceMessage::NewLobby(message) => {
+                            let lobby_id = LobbyId(rand::random());
+                            let player_id = PlayerId(rand::random());
+                            let mut players = HashMap::new();
+                            players.insert(
+                                player_id,
+                                Player {
+                                    name: message.player_name,
+                                },
+                            );
+                            self.lobbies.insert(
+                                lobby_id,
+                                Lobby {
+                                    players: players,
+                                    game: None,
+                                    password: message.password,
+                                    name: message.lobby_name,
+                                    owner: player_id,
+                                    max_players: message.max_players,
+                                    creation_time: Instant::now(),
+                                },
+                            );
+                            serde_json::to_vec(&NewLobbyResponse {
+                                player_id: player_id,
+                                lobby_id: lobby_id,
+                            })
+                        }
+                        PalaceMessage::JoinLobby(message) => {
+                            let mut lobby_opt = self.lobbies.get_mut(&message.lobby_id);
+                            if let Some(lobby) = lobby_opt {
+                                if lobby.game.is_some() {
+                                    serde_json::to_vec("game has started")
+                                } else if lobby.password != message.password {
+                                    serde_json::to_vec("bad password")
+                                } else if lobby.players.len() as u8 >= lobby.max_players {
+                                    serde_json::to_vec("lobby is full")
+                                } else {
+                                    let player_id = PlayerId(rand::random());
+                                    lobby.players.insert(
+                                        player_id,
+                                        Player {
+                                            name: message.player_name,
+                                        },
+                                    );
+                                    serde_json::to_vec(&JoinLobbyResponse {
+                                        player_id: player_id,
+                                    })
+                                }
+                            } else {
+                                serde_json::to_vec("lobby does not exist")
+                            }
+                        }
+                        PalaceMessage::ListLobbies => {
+                            // @Performance we should be able to serialize with Serializer::collect_seq
+                            // and avoid collecting into a vector
+                            serde_json::to_vec(&self.lobbies.values().map(|x| x.display()).collect::<Vec<_>>())
+                        }
+                        PalaceMessage::StartGame(message) => {
+                            let lobby_opt = self.lobbies.get_mut(&message.lobby_id);
+                            if let Some(lobby) = lobby_opt {
+                                if message.player_id != lobby.owner {
+                                    serde_json::to_vec("must be the owner to start game")
+                                } else if lobby.players.len() < 2 {
+                                    serde_json::to_vec("can't start a game with less than 2 players")
+                                } else {
+                                    lobby.game = Some(GameState::new(lobby.players.len() as u8));
+                                    serde_json::to_vec("started")
+                                }
+                            } else {
+                                serde_json::to_vec("lobby does not exist")
+                            }
+                        }
+                    };
+                    self.out.send(ws::Message::binary(response.unwrap()))
+                } else {
+                    self.out.close(CloseCode::Invalid)
                 }
-                if lobby.players.len() < 2 {
-                    return rocket::response::content::Json(
-                        "can't start a game with less than 2 players".into(),
-                    );
-                }
-                lobby.game = Some(GameState::new(lobby.players.len() as u8));
-                rocket::response::content::Json("started".into())
-            } else {
-                rocket::response::content::Json("lobby does not exist".into())
             }
         }
     }
-}
 
-#[get("/lobbies")]
-fn lobbies(server_state: State<ServerState>) -> rocket::response::content::Json<String> {
-    // @Performance we should be able to serialize with Serializer::collect_seq
-    // and avoid collecting into a vector
-    rocket::response::content::Json(
-        serde_json::to_string(
-            &server_state
-                .lobbies
-                .read()
-                .unwrap()
-                .values()
-                .map(|x| x.display())
-                .collect::<Vec<_>>(),
-        ).unwrap(),
-    )
+    fn on_close(&mut self, code: CloseCode, reason: &str) {
+        // The WebSocket protocol allows for a utf8 reason for the closing state after the
+        // close code. WS-RS will attempt to interpret this data as a utf8 description of the
+        // reason for closing the connection. I many cases, `reason` will be an empty string.
+        // So, you may not normally want to display `reason` to the user,
+        // but let's assume that we know that `reason` is human-readable.
+        match code {
+            CloseCode::Normal => println!("The client is done with the connection."),
+            CloseCode::Away => println!("The client is leaving the site."),
+            _ => println!("The client encountered an error: {}", reason),
+        }
+    }
+
+    fn on_open(&mut self, _: Handshake) -> ws::Result<()> {
+        self.out.send("welcome")
+    }
 }
 
 fn main() {
-    // @Performance should be a concurrent hash map, FNV hashing could be good as well
-    let server_state = ServerState {
-        lobbies: RwLock::new(HashMap::new()),
-    };
-
-    rocket::ignite()
-        .manage(server_state)
-        .mount("/", routes![api, lobbies])
-        .launch();
+    listen("127.0.0.1:3012", |out| Server { out: out, lobbies: HashMap::new() } ).unwrap()
 }
