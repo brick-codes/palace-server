@@ -1,5 +1,4 @@
 use rand::{self, Rng};
-use std::ops::{Deref, DerefMut};
 
 #[derive(Copy, Clone, Debug, Serialize)]
 enum CardSuit {
@@ -180,8 +179,6 @@ pub struct PrivateGameState {
 }
 
 mod test {
-    use super::*;
-
     #[test]
     fn test_new_game() {
         let new_game = GameState::new(4);

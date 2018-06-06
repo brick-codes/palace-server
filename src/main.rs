@@ -1,9 +1,8 @@
 #![feature(plugin, decl_macro)]
 #![plugin(rocket_codegen)]
 
-#[macro_use]
-extern crate rocket;
 extern crate rand;
+extern crate rocket;
 extern crate rocket_contrib;
 #[macro_use]
 extern crate serde_derive;
@@ -15,15 +14,16 @@ mod game;
 use game::GameState;
 use rocket::State;
 use rocket_contrib::Json;
+use serde::{Deserialize, Deserializer, Serializer};
 use std::collections::HashMap;
 use std::sync::RwLock;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 #[derive(PartialEq, Eq, Hash, Serialize, Deserialize, Clone, Copy)]
-struct PlayerId(u128);
+struct PlayerId(#[serde(serialize_with = "as_hex_str", deserialize_with = "hex_to_u128")] u128);
 
 #[derive(PartialEq, Eq, Hash, Serialize, Deserialize, Clone, Copy)]
-struct LobbyId(u128);
+struct LobbyId(#[serde(serialize_with = "as_hex_str", deserialize_with = "hex_to_u128")] u128);
 
 struct Lobby {
     players: HashMap<PlayerId, Player>,
@@ -32,6 +32,26 @@ struct Lobby {
     game: Option<GameState>,
     owner: PlayerId,
     name: String,
+    creation_time: Instant,
+}
+
+pub fn as_hex_str<T, S>(token: &T, serializer: S) -> Result<S::Ok, S::Error>
+where
+    T: std::fmt::LowerHex,
+    S: Serializer,
+{
+    serializer.serialize_str(&format!("{:x}", token))
+}
+
+pub fn hex_to_u128<'de, D>(deserializer: D) -> Result<u128, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::{Error, Unexpected};
+    String::deserialize(deserializer).and_then(|string| {
+        u128::from_str_radix(&string, 16)
+            .map_err(|_| Error::invalid_value(Unexpected::Str(&string), &"hex encoded token"))
+    })
 }
 
 impl Lobby {
@@ -43,6 +63,7 @@ impl Lobby {
             has_password: !self.password.is_empty(),
             owner: &self.players.get(&self.owner).unwrap().name,
             name: &self.name,
+            age: self.creation_time.elapsed(),
         }
     }
 }
@@ -55,6 +76,7 @@ struct LobbyDisplay<'a> {
     has_password: bool,
     owner: &'a str,
     name: &'a str,
+    age: Duration,
 }
 
 struct Player {
@@ -80,8 +102,28 @@ struct NewLobbyResponse {
 }
 
 #[derive(Deserialize)]
+struct JoinLobbyMessage {
+    lobby_id: LobbyId,
+    player_name: String,
+    password: String,
+}
+
+#[derive(Serialize)]
+struct JoinLobbyResponse {
+    player_id: PlayerId,
+}
+
+#[derive(Deserialize)]
+struct StartGameMessage {
+    lobby_id: LobbyId,
+    player_id: PlayerId,
+}
+
+#[derive(Deserialize)]
 enum Message {
     NewLobby(NewLobbyMessage),
+    JoinLobby(JoinLobbyMessage),
+    StartGame(StartGameMessage),
 }
 
 #[post("/api", format = "application/json", data = "<message>")]
@@ -110,6 +152,7 @@ fn api(
                     name: message.lobby_name,
                     owner: player_id,
                     max_players: message.max_players,
+                    creation_time: Instant::now(),
                 },
             );
             rocket::response::content::Json(
@@ -118,6 +161,52 @@ fn api(
                     lobby_id: lobby_id,
                 }).unwrap(),
             )
+        }
+        Message::JoinLobby(message) => {
+            let mut lobbies = server_state.lobbies.write().unwrap();
+            let mut lobby_opt = lobbies.get_mut(&message.lobby_id);
+            if let Some(lobby) = lobby_opt {
+                if lobby.password != message.password {
+                    return rocket::response::content::Json("bad password".into());
+                }
+                if lobby.players.len() as u8 >= lobby.max_players {
+                    return rocket::response::content::Json("lobby is full".into());
+                }
+                let player_id = PlayerId(rand::random());
+                lobby.players.insert(
+                    player_id,
+                    Player {
+                        name: message.player_name,
+                    },
+                );
+                rocket::response::content::Json(
+                    serde_json::to_string(&JoinLobbyResponse {
+                        player_id: player_id,
+                    }).unwrap(),
+                )
+            } else {
+                rocket::response::content::Json("lobby does not exist".into())
+            }
+        }
+        Message::StartGame(message) => {
+            let mut lobbies = server_state.lobbies.write().unwrap();
+            let lobby_opt = lobbies.get_mut(&message.lobby_id);
+            if let Some(lobby) = lobby_opt {
+                if message.player_id != lobby.owner {
+                    return rocket::response::content::Json(
+                        "must be the owner to start game".into(),
+                    );
+                }
+                if lobby.players.len() < 2 {
+                    return rocket::response::content::Json(
+                        "can't start a game with less than 2 players".into(),
+                    );
+                }
+                lobby.game = Some(GameState::new(lobby.players.len() as u8));
+                rocket::response::content::Json("started".into())
+            } else {
+                rocket::response::content::Json("lobby does not exist".into())
+            }
         }
     }
 }
