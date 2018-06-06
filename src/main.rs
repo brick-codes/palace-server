@@ -13,7 +13,7 @@ use game::GameState;
 use serde::{Deserialize, Deserializer, Serializer};
 use std::collections::HashMap;
 use std::time::Instant;
-use ws::{listen, Handler, Handshake, Sender, Message, CloseCode};
+use ws::{listen, CloseCode, Handler, Handshake, Message, Sender};
 
 #[derive(PartialEq, Eq, Hash, Serialize, Deserialize, Clone, Copy)]
 struct PlayerId(#[serde(serialize_with = "as_hex_str", deserialize_with = "hex_to_u128")] u128);
@@ -121,16 +121,13 @@ enum PalaceMessage {
 
 struct Server {
     out: Sender,
-    lobbies: HashMap<LobbyId, Lobby>
+    lobbies: HashMap<LobbyId, Lobby>,
 }
 
 impl Handler for Server {
-
     fn on_message(&mut self, msg: Message) -> ws::Result<()> {
         match msg {
-            Message::Text(_) => {
-                self.out.close(CloseCode::Unsupported)
-            }
+            Message::Text(_) => self.out.close(CloseCode::Unsupported),
             Message::Binary(binary) => {
                 if let Ok(message) = serde_json::from_slice::<PalaceMessage>(&binary) {
                     let response: Result<Vec<u8>, serde_json::Error> = match message {
@@ -189,7 +186,13 @@ impl Handler for Server {
                         PalaceMessage::ListLobbies => {
                             // @Performance we should be able to serialize with Serializer::collect_seq
                             // and avoid collecting into a vector
-                            serde_json::to_vec(&self.lobbies.values().map(|x| x.display()).collect::<Vec<_>>())
+                            serde_json::to_vec(
+                                &self
+                                    .lobbies
+                                    .values()
+                                    .map(|x| x.display())
+                                    .collect::<Vec<_>>(),
+                            )
                         }
                         PalaceMessage::StartGame(message) => {
                             let lobby_opt = self.lobbies.get_mut(&message.lobby_id);
@@ -197,7 +200,9 @@ impl Handler for Server {
                                 if message.player_id != lobby.owner {
                                     serde_json::to_vec("must be the owner to start game")
                                 } else if lobby.players.len() < 2 {
-                                    serde_json::to_vec("can't start a game with less than 2 players")
+                                    serde_json::to_vec(
+                                        "can't start a game with less than 2 players",
+                                    )
                                 } else {
                                     lobby.game = Some(GameState::new(lobby.players.len() as u8));
                                     serde_json::to_vec("started")
@@ -234,5 +239,8 @@ impl Handler for Server {
 }
 
 fn main() {
-    listen("127.0.0.1:3012", |out| Server { out: out, lobbies: HashMap::new() } ).unwrap()
+    listen("127.0.0.1:3012", |out| Server {
+        out: out,
+        lobbies: HashMap::new(),
+    }).unwrap()
 }
