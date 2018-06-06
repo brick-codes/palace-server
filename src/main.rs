@@ -17,23 +17,13 @@ use rocket_contrib::Json;
 use serde::{Deserialize, Deserializer, Serializer};
 use std::collections::HashMap;
 use std::sync::RwLock;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 #[derive(PartialEq, Eq, Hash, Serialize, Deserialize, Clone, Copy)]
 struct PlayerId(#[serde(serialize_with = "as_hex_str", deserialize_with = "hex_to_u128")] u128);
 
 #[derive(PartialEq, Eq, Hash, Serialize, Deserialize, Clone, Copy)]
 struct LobbyId(#[serde(serialize_with = "as_hex_str", deserialize_with = "hex_to_u128")] u128);
-
-struct Lobby {
-    players: HashMap<PlayerId, Player>,
-    max_players: u8,
-    password: String,
-    game: Option<GameState>,
-    owner: PlayerId,
-    name: String,
-    creation_time: Instant,
-}
 
 pub fn as_hex_str<T, S>(token: &T, serializer: S) -> Result<S::Ok, S::Error>
 where
@@ -54,6 +44,16 @@ where
     })
 }
 
+struct Lobby {
+    players: HashMap<PlayerId, Player>,
+    max_players: u8,
+    password: String,
+    game: Option<GameState>,
+    owner: PlayerId,
+    name: String,
+    creation_time: Instant,
+}
+
 impl Lobby {
     fn display(&self) -> LobbyDisplay {
         LobbyDisplay {
@@ -63,7 +63,7 @@ impl Lobby {
             has_password: !self.password.is_empty(),
             owner: &self.players.get(&self.owner).unwrap().name,
             name: &self.name,
-            age: self.creation_time.elapsed(),
+            age: self.creation_time.elapsed().as_secs(),
         }
     }
 }
@@ -76,7 +76,7 @@ struct LobbyDisplay<'a> {
     has_password: bool,
     owner: &'a str,
     name: &'a str,
-    age: Duration,
+    age: u64,
 }
 
 struct Player {
