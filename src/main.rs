@@ -166,6 +166,9 @@ fn api(
             let mut lobbies = server_state.lobbies.write().unwrap();
             let mut lobby_opt = lobbies.get_mut(&message.lobby_id);
             if let Some(lobby) = lobby_opt {
+                if lobby.game.is_some() {
+                    return rocket::response::content::Json("game has started".into());
+                }
                 if lobby.password != message.password {
                     return rocket::response::content::Json("bad password".into());
                 }
@@ -213,6 +216,8 @@ fn api(
 
 #[get("/lobbies")]
 fn lobbies(server_state: State<ServerState>) -> rocket::response::content::Json<String> {
+    // @Performance we should be able to serialize with Serializer::collect_seq
+    // and avoid collecting into a vector
     rocket::response::content::Json(
         serde_json::to_string(
             &server_state
