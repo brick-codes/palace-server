@@ -231,7 +231,8 @@ impl Handler for Server {
                                         player.turn_number = turn_numbers.next().unwrap();
                                         match player.connection {
                                             either::Left(ref mut sender) => {
-                                                sender.send(public_gs.clone())?
+                                                sender.send(public_gs.clone())?;
+                                                sender.send(serde_json::to_vec(lobby.game.unwrap().get_hand(player.turn_number)).unwrap())?;
                                             }
                                             either::Right(_) => (),
                                         }
