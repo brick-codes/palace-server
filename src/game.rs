@@ -62,6 +62,7 @@ pub enum GamePhase {
     Play,
 }
 
+#[derive(Clone, Debug)]
 pub struct GameState {
     active_player: u8,
     hands: Box<[Vec<Card>]>,
@@ -179,8 +180,11 @@ pub struct PrivateGameState {
 }
 
 mod test {
+
     #[test]
     fn test_new_game() {
+        use super::*;
+
         let new_game = GameState::new(4);
         let pub_state = new_game.public_state();
         let serialized = ::serde_json::to_string(&pub_state).unwrap();

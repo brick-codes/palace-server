@@ -1,5 +1,6 @@
 #![feature(catch_expr)]
 
+extern crate either;
 extern crate rand;
 #[macro_use]
 extern crate serde_derive;
@@ -9,9 +10,12 @@ extern crate ws;
 
 mod game;
 
+use either::Either;
 use game::GameState;
 use serde::{Deserialize, Deserializer, Serializer};
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::time::Instant;
 use ws::{listen, CloseCode, Handler, Handshake, Message, Sender};
 
@@ -77,6 +81,7 @@ struct LobbyDisplay<'a> {
 
 struct Player {
     name: String,
+    connection: Either<Sender, Instant>,
 }
 
 #[derive(Deserialize)]
@@ -121,7 +126,8 @@ enum PalaceMessage {
 
 struct Server {
     out: Sender,
-    lobbies: HashMap<LobbyId, Lobby>,
+    lobbies: Rc<RefCell<HashMap<LobbyId, Lobby>>>,
+    connected_lobby_player: Option<(LobbyId, PlayerId)>,
 }
 
 impl Handler for Server {
@@ -132,6 +138,7 @@ impl Handler for Server {
                 if let Ok(message) = serde_json::from_slice::<PalaceMessage>(&binary) {
                     let response: Result<Vec<u8>, serde_json::Error> = match message {
                         PalaceMessage::NewLobby(message) => {
+                            let mut lobbies = self.lobbies.borrow_mut();
                             let lobby_id = LobbyId(rand::random());
                             let player_id = PlayerId(rand::random());
                             let mut players = HashMap::new();
@@ -139,9 +146,10 @@ impl Handler for Server {
                                 player_id,
                                 Player {
                                     name: message.player_name,
+                                    connection: either::Left(self.out.clone()),
                                 },
                             );
-                            self.lobbies.insert(
+                            lobbies.insert(
                                 lobby_id,
                                 Lobby {
                                     players: players,
@@ -153,13 +161,15 @@ impl Handler for Server {
                                     creation_time: Instant::now(),
                                 },
                             );
+                            self.connected_lobby_player = Some((lobby_id, player_id));
                             serde_json::to_vec(&NewLobbyResponse {
                                 player_id: player_id,
                                 lobby_id: lobby_id,
                             })
                         }
                         PalaceMessage::JoinLobby(message) => {
-                            let mut lobby_opt = self.lobbies.get_mut(&message.lobby_id);
+                            let mut lobbies = self.lobbies.borrow_mut();
+                            let mut lobby_opt = lobbies.get_mut(&message.lobby_id);
                             if let Some(lobby) = lobby_opt {
                                 if lobby.game.is_some() {
                                     serde_json::to_vec("game has started")
@@ -173,8 +183,11 @@ impl Handler for Server {
                                         player_id,
                                         Player {
                                             name: message.player_name,
+                                            connection: Either::Left(self.out.clone()),
                                         },
                                     );
+                                    self.connected_lobby_player =
+                                        Some((message.lobby_id, player_id));
                                     serde_json::to_vec(&JoinLobbyResponse {
                                         player_id: player_id,
                                     })
@@ -184,19 +197,16 @@ impl Handler for Server {
                             }
                         }
                         PalaceMessage::ListLobbies => {
+                            let mut lobbies = self.lobbies.borrow_mut();
                             // @Performance we should be able to serialize with Serializer::collect_seq
                             // and avoid collecting into a vector
                             serde_json::to_vec(
-                                &self
-                                    .lobbies
-                                    .values()
-                                    .map(|x| x.display())
-                                    .collect::<Vec<_>>(),
+                                &lobbies.values().map(|x| x.display()).collect::<Vec<_>>(),
                             )
                         }
                         PalaceMessage::StartGame(message) => {
-                            let lobby_opt = self.lobbies.get_mut(&message.lobby_id);
-                            if let Some(lobby) = lobby_opt {
+                            let mut lobbies = self.lobbies.borrow_mut();
+                            if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
                                 if message.player_id != lobby.owner {
                                     serde_json::to_vec("must be the owner to start game")
                                 } else if lobby.players.len() < 2 {
@@ -204,7 +214,17 @@ impl Handler for Server {
                                         "can't start a game with less than 2 players",
                                     )
                                 } else {
-                                    lobby.game = Some(GameState::new(lobby.players.len() as u8));
+                                    let gs = GameState::new(lobby.players.len() as u8);
+                                    let public_gs = serde_json::to_vec(&gs.public_state()).unwrap();
+                                    lobby.game = Some(gs);
+                                    for player in lobby.players.values_mut() {
+                                        match player.connection {
+                                            either::Left(ref mut sender) => {
+                                                sender.send(public_gs.clone())?
+                                            }
+                                            either::Right(_) => (),
+                                        }
+                                    }
                                     serde_json::to_vec("started")
                                 }
                             } else {
@@ -220,27 +240,28 @@ impl Handler for Server {
         }
     }
 
-    fn on_close(&mut self, code: CloseCode, reason: &str) {
-        // The WebSocket protocol allows for a utf8 reason for the closing state after the
-        // close code. WS-RS will attempt to interpret this data as a utf8 description of the
-        // reason for closing the connection. I many cases, `reason` will be an empty string.
-        // So, you may not normally want to display `reason` to the user,
-        // but let's assume that we know that `reason` is human-readable.
-        match code {
-            CloseCode::Normal => println!("The client is done with the connection."),
-            CloseCode::Away => println!("The client is leaving the site."),
-            _ => println!("The client encountered an error: {}", reason),
+    fn on_close(&mut self, _code: CloseCode, _reason: &str) {
+        let mut lobbies = self.lobbies.borrow_mut();
+        if let Some((lobby_id, player_id)) = self.connected_lobby_player {
+            if let Some(lobby) = lobbies.get_mut(&lobby_id) {
+                if let Some(player) = lobby.players.get_mut(&player_id) {
+                    player.connection = Either::Right(Instant::now());;
+                }
+            }
         }
     }
 
     fn on_open(&mut self, _: Handshake) -> ws::Result<()> {
-        self.out.send("welcome")
+        Ok(())
     }
 }
 
 fn main() {
+    // @Performance this could be a *mut pointer w/ unsafe
+    let lobbies = Rc::new(RefCell::new(HashMap::new()));
     listen("127.0.0.1:3012", |out| Server {
         out: out,
-        lobbies: HashMap::new(),
+        lobbies: lobbies.clone(),
+        connected_lobby_player: None,
     }).unwrap()
 }

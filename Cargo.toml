@@ -4,15 +4,9 @@ version = "0.1.0"
 authors = ["Richard McCormack <rmccormack@ebsco.com>"]
 
 [dependencies]
-rocket = { git = "https://github.com/SergioBenitez/Rocket" }
-rocket_codegen = { git = "https://github.com/SergioBenitez/Rocket" }
+either = "1"
 rand = { version = "0.5", features = ["i128_support"] }
 serde = "1"
 serde_derive = "1"
 serde_json = "1"
 ws = { git = "https://github.com/housleyjk/ws-rs" }
-
-[dependencies.rocket_contrib]
-git = "https://github.com/SergioBenitez/Rocket"
-default-features = false
-features = ["json"]
