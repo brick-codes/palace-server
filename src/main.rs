@@ -12,6 +12,7 @@ mod game;
 
 use either::Either;
 use game::GameState;
+use rand::Rng;
 use serde::{Deserialize, Deserializer, Serializer};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -82,6 +83,7 @@ struct LobbyDisplay<'a> {
 struct Player {
     name: String,
     connection: Either<Sender, Instant>,
+    turn_number: u8
 }
 
 #[derive(Deserialize)]
@@ -147,6 +149,7 @@ impl Handler for Server {
                                 Player {
                                     name: message.player_name,
                                     connection: either::Left(self.out.clone()),
+                                    turn_number: 0,
                                 },
                             );
                             lobbies.insert(
@@ -184,6 +187,7 @@ impl Handler for Server {
                                         Player {
                                             name: message.player_name,
                                             connection: Either::Left(self.out.clone()),
+                                            turn_number: 0,
                                         },
                                     );
                                     self.connected_lobby_player =
@@ -214,10 +218,15 @@ impl Handler for Server {
                                         "can't start a game with less than 2 players",
                                     )
                                 } else {
-                                    let gs = GameState::new(lobby.players.len() as u8);
+                                    let num_players = lobby.players.len() as u8;
+                                    let gs = GameState::new(num_players);
                                     let public_gs = serde_json::to_vec(&gs.public_state()).unwrap();
                                     lobby.game = Some(gs);
+                                    let mut turn_numbers: Vec<u8> = (0..num_players).collect();
+                                    rand::thread_rng().shuffle(&mut turn_numbers);
+                                    let mut turn_numbers = turn_numbers.into_iter();
                                     for player in lobby.players.values_mut() {
+                                        player.turn_number = turn_numbers.next().unwrap();
                                         match player.connection {
                                             either::Left(ref mut sender) => {
                                                 sender.send(public_gs.clone())?
