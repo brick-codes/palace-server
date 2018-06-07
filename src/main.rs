@@ -83,7 +83,7 @@ struct LobbyDisplay<'a> {
 struct Player {
     name: String,
     connection: Either<Sender, Instant>,
-    turn_number: u8
+    turn_number: u8,
 }
 
 #[derive(Deserialize)]
@@ -222,7 +222,9 @@ impl Handler for Server {
                                     let gs = GameState::new(num_players);
                                     let public_gs = serde_json::to_vec(&gs.public_state()).unwrap();
                                     lobby.game = Some(gs);
-                                    let mut turn_numbers: Vec<u8> = (0..num_players).collect();
+                                    let mut turn_numbers: Vec<
+                                        u8,
+                                    > = (0..num_players).collect();
                                     rand::thread_rng().shuffle(&mut turn_numbers);
                                     let mut turn_numbers = turn_numbers.into_iter();
                                     for player in lobby.players.values_mut() {

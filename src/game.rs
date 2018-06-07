@@ -166,7 +166,12 @@ impl GameState {
         }
     }
 
-    pub fn choose_three_faceup(&mut self, card_one: Card, card_two: Card, card_three: Card) -> Result<(), &'static str> {
+    pub fn choose_three_faceup(
+        &mut self,
+        card_one: Card,
+        card_two: Card,
+        card_three: Card,
+    ) -> Result<(), &'static str> {
         // Validate phase
         if self.cur_phase != GamePhase::Setup {
             return Err("Can only choose three faceup cards during Setup phase");
@@ -202,7 +207,8 @@ impl GameState {
         }
 
         // Mutate state
-        self.face_up_three[self.active_player as usize] = (Some(card_one), Some(card_two), Some(card_three));
+        self.face_up_three[self.active_player as usize] =
+            (Some(card_one), Some(card_two), Some(card_three));
         self.hands[self.active_player as usize] = new_hand;
         self.rotate_play();
 
