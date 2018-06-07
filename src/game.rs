@@ -219,6 +219,10 @@ impl GameState {
         Ok(())
     }
 
+    pub fn get_hand(&self, player_num: u8) -> &[Card] {
+        &self.hands[player_num as usize]
+    }
+
     fn rotate_play(&mut self) {
         self.active_player += 1;
         if self.active_player == self.num_players {
@@ -237,10 +241,6 @@ pub struct PublicGameState {
     cleared_size: usize,
     cur_phase: GamePhase,
     active_player: u8,
-}
-
-pub struct PrivateGameState {
-    hand: Box<[Card]>,
 }
 
 mod test {
