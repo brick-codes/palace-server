@@ -126,6 +126,13 @@ enum PalaceMessage {
     StartGame(StartGameMessage),
 }
 
+#[derive(Serialize)]
+enum PalaceOutMessage<'a> {
+    NewLobby(&'a NewLobbyResponse),
+    JoinLobby(&'a JoinLobbyResponse),
+    LobbyList(&'a [LobbyDisplay<'a>]),
+}
+
 struct Server {
     out: Sender,
     lobbies: Rc<RefCell<HashMap<LobbyId, Lobby>>>,
@@ -172,10 +179,10 @@ impl Handler for Server {
                                 },
                             );
                             self.connected_lobby_player = Some((lobby_id, player_id));
-                            serde_json::to_vec(&NewLobbyResponse {
+                            serde_json::to_vec(&PalaceOutMessage::NewLobby(&NewLobbyResponse {
                                 player_id: player_id,
                                 lobby_id: lobby_id,
-                            })
+                            }))
                         }
                         PalaceMessage::JoinLobby(message) => {
                             let mut lobbies = self.lobbies.borrow_mut();
@@ -199,9 +206,9 @@ impl Handler for Server {
                                     );
                                     self.connected_lobby_player =
                                         Some((message.lobby_id, player_id));
-                                    serde_json::to_vec(&JoinLobbyResponse {
+                                    serde_json::to_vec(&PalaceOutMessage::JoinLobby(&JoinLobbyResponse {
                                         player_id: player_id,
-                                    })
+                                    }))
                                 }
                             } else {
                                 serde_json::to_vec("lobby does not exist")
@@ -213,7 +220,7 @@ impl Handler for Server {
                             // @Performance we should be able to serialize with Serializer::collect_seq
                             // and avoid collecting into a vector
                             serde_json::to_vec(
-                                &lobbies.values().map(|x| x.display()).collect::<Vec<_>>(),
+                                &PalaceOutMessage::LobbyList(&lobbies.values().map(|x| x.display()).collect::<Vec<_>>()),
                             )
                         }
                         PalaceMessage::StartGame(message) => {
