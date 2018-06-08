@@ -216,9 +216,11 @@ impl Handler for Server {
                                     );
                                     self.connected_lobby_player =
                                         Some((message.lobby_id, player_id));
-                                    serde_json::to_vec(&PalaceOutMessage::JoinLobby(&JoinLobbyResponse {
-                                        player_id: player_id,
-                                    }))
+                                    serde_json::to_vec(&PalaceOutMessage::JoinLobby(
+                                        &JoinLobbyResponse {
+                                            player_id: player_id,
+                                        },
+                                    ))
                                 }
                             } else {
                                 serde_json::to_vec("lobby does not exist")
@@ -229,9 +231,9 @@ impl Handler for Server {
                             let mut lobbies = self.lobbies.borrow_mut();
                             // @Performance we should be able to serialize with Serializer::collect_seq
                             // and avoid collecting into a vector
-                            serde_json::to_vec(
-                                &PalaceOutMessage::LobbyList(&lobbies.values().map(|x| x.display()).collect::<Vec<_>>()),
-                            )
+                            serde_json::to_vec(&PalaceOutMessage::LobbyList(
+                                &lobbies.values().map(|x| x.display()).collect::<Vec<_>>(),
+                            ))
                         }
                         PalaceMessage::StartGame(message) => {
                             let mut lobbies = self.lobbies.borrow_mut();
@@ -245,7 +247,8 @@ impl Handler for Server {
                                 } else {
                                     let num_players = lobby.players.len() as u8;
                                     let gs = GameState::new(num_players);
-                                    let public_gs_json = serde_json::to_vec(&gs.public_state()).unwrap();
+                                    let public_gs_json =
+                                        serde_json::to_vec(&gs.public_state()).unwrap();
                                     lobby.game = Some(gs);
                                     let mut turn_numbers: Vec<
                                         u8,
@@ -261,7 +264,7 @@ impl Handler for Server {
                                                     Some(ref mut gs) => {
                                                         sender.send(serde_json::to_vec(gs.get_hand(player.turn_number)).unwrap())?;
                                                     }
-                                                    None => unreachable!()
+                                                    None => unreachable!(),
                                                 }
                                             }
                                             either::Right(_) => (),
@@ -280,32 +283,47 @@ impl Handler for Server {
                                     let result;
                                     if let Some(player) = lobby.players.get(&message.player_id) {
                                         if player.turn_number == gs.active_player {
-                                            return self.out.send(serde_json::to_vec("it is not your turn").unwrap());
+                                            return self.out.send(
+                                                serde_json::to_vec("it is not your turn").unwrap(),
+                                            );
                                         }
-                                        result = gs.choose_three_faceup(message.card_one, message.card_two, message.card_three);
+                                        result = gs.choose_three_faceup(
+                                            message.card_one,
+                                            message.card_two,
+                                            message.card_three,
+                                        );
                                     } else {
-                                        return self.out.send(serde_json::to_vec("player does not exist").unwrap());
+                                        return self.out.send(
+                                            serde_json::to_vec("player does not exist").unwrap(),
+                                        );
                                     }
                                     if result.is_ok() {
-                                        let public_gs_json = serde_json::to_vec(&gs.public_state()).unwrap();
+                                        let public_gs_json =
+                                            serde_json::to_vec(&gs.public_state()).unwrap();
                                         for player in lobby.players.values_mut() {
                                             match player.connection {
                                                 either::Left(ref mut sender) => {
                                                     sender.send(public_gs_json.clone())?;
                                                     sender.send(serde_json::to_vec(gs.get_hand(player.turn_number)).unwrap())?;
                                                 }
-                                                either::Right(_) => ()
+                                                either::Right(_) => (),
                                             }
                                         }
                                         return Ok(());
                                     } else {
-                                        return self.out.send(serde_json::to_vec("illegal").unwrap());
+                                        return self
+                                            .out
+                                            .send(serde_json::to_vec("illegal").unwrap());
                                     }
                                 } else {
-                                    return self.out.send(serde_json::to_vec("game has not started").unwrap());
+                                    return self
+                                        .out
+                                        .send(serde_json::to_vec("game has not started").unwrap());
                                 }
                             } else {
-                                return self.out.send(serde_json::to_vec("lobby does not exist").unwrap());
+                                return self
+                                    .out
+                                    .send(serde_json::to_vec("lobby does not exist").unwrap());
                             }
                         }
                     };
@@ -324,7 +342,7 @@ impl Handler for Server {
         if let Some((lobby_id, player_id)) = self.connected_lobby_player {
             if let Some(lobby) = lobbies.get_mut(&lobby_id) {
                 if let Some(player) = lobby.players.get_mut(&player_id) {
-                    player.connection = Either::Right(Instant::now());;
+                    player.connection = Either::Right(Instant::now());
                 }
             }
         }

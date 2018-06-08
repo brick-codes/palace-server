@@ -203,7 +203,7 @@ impl GameState {
 
         // Make sure that all three cards put face up were removed from hand
         if !(card_one_removed && card_two_removed && card_three_removed) {
-            return Err("Three faceup cards are not in hand / already faceup cards");
+            return Err("Chosen three faceup cards are not in hand / already faceup cards");
         }
 
         // Mutate state
