@@ -134,9 +134,16 @@ struct Server {
 
 impl Handler for Server {
     fn on_message(&mut self, msg: Message) -> ws::Result<()> {
+        println!("got message");
         match msg {
             Message::Text(_) => self.out.close(CloseCode::Unsupported),
             Message::Binary(binary) => {
+                /*
+                unsafe {
+                    let string = String::from_utf8_unchecked(binary.clone());
+                    println!("{}", string);
+                    let pm: PalaceMessage = serde_json::from_str(&string).unwrap();
+                } */
                 if let Ok(message) = serde_json::from_slice::<PalaceMessage>(&binary) {
                     let response: Result<Vec<u8>, serde_json::Error> = match message {
                         PalaceMessage::NewLobby(message) => {
@@ -201,6 +208,7 @@ impl Handler for Server {
                             }
                         }
                         PalaceMessage::ListLobbies => {
+                            println!("got lobby message");
                             let mut lobbies = self.lobbies.borrow_mut();
                             // @Performance we should be able to serialize with Serializer::collect_seq
                             // and avoid collecting into a vector
@@ -232,7 +240,12 @@ impl Handler for Server {
                                         match player.connection {
                                             either::Left(ref mut sender) => {
                                                 sender.send(public_gs.clone())?;
-                                                sender.send(serde_json::to_vec(lobby.game.unwrap().get_hand(player.turn_number)).unwrap())?;
+                                                match lobby.game {
+                                                    Some(ref mut gs) => {
+                                                        sender.send(serde_json::to_vec(gs.get_hand(player.turn_number)).unwrap())?;
+                                                    }
+                                                    None => unreachable!()
+                                                }
                                             }
                                             either::Right(_) => (),
                                         }
@@ -246,6 +259,7 @@ impl Handler for Server {
                     };
                     self.out.send(ws::Message::binary(response.unwrap()))
                 } else {
+                    println!("unknown message");
                     self.out.close(CloseCode::Invalid)
                 }
             }
@@ -253,6 +267,7 @@ impl Handler for Server {
     }
 
     fn on_close(&mut self, _code: CloseCode, _reason: &str) {
+        println!("closed");
         let mut lobbies = self.lobbies.borrow_mut();
         if let Some((lobby_id, player_id)) = self.connected_lobby_player {
             if let Some(lobby) = lobbies.get_mut(&lobby_id) {
@@ -264,6 +279,7 @@ impl Handler for Server {
     }
 
     fn on_open(&mut self, _: Handshake) -> ws::Result<()> {
+        println!("connected");
         Ok(())
     }
 }
@@ -271,7 +287,7 @@ impl Handler for Server {
 fn main() {
     // @Performance this could be a *mut pointer w/ unsafe
     let lobbies = Rc::new(RefCell::new(HashMap::new()));
-    listen("127.0.0.1:3012", |out| Server {
+    listen("0.0.0.0:3012", |out| Server {
         out: out,
         lobbies: lobbies.clone(),
         connected_lobby_player: None,
