@@ -219,6 +219,30 @@ impl GameState {
         Ok(())
     }
 
+    pub fn make_play(&mut self, cards: Box<[Card]>) -> Result<(), &'static str> {
+        if cards.len() == 0 {
+            return Err("Have to play at least one card")
+        }
+
+        if cards.windows(2).filter(|cards| cards[0].value != cards[1].value).count() != 0 {
+            return Err("Can only play multiple cards if each card has the same value")
+        }
+
+        let card_value = cards[0].value;
+
+        let is_playable = {
+            match self.get_effective_top_card() {
+                CardValue::Two => true,
+                CardValue::Three => card_value != CardValue::Two,
+                _ => true
+            }
+        };
+
+        self.rotate_play();
+
+        Ok(())
+    }
+
     pub fn get_hand(&self, player_num: u8) -> &[Card] {
         &self.hands[player_num as usize]
     }
@@ -228,6 +252,24 @@ impl GameState {
         if self.active_player == self.num_players {
             self.active_player = 0;
         }
+    }
+
+    fn get_effective_top_card(&self) -> CardValue {
+        let mut index = self.pile_cards.len() - 1;
+        let effective_top_card_value = if let Some(card) = self.pile_cards.get(index) {
+            card.value
+        } else {
+            CardValue::Two
+        };
+        while effective_top_card_value == CardValue::Four {
+            index -= 1;
+            let effective_top_card_value = if let Some(card) = self.pile_cards.get(index) {
+                card.value
+            } else {
+                CardValue::Two
+            };
+        }
+        effective_top_card_value
     }
 }
 
