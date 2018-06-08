@@ -10,3 +10,6 @@ serde = "1"
 serde_derive = "1"
 serde_json = "1"
 ws = { git = "https://github.com/housleyjk/ws-rs" }
+
+[profile.release]
+lto = true

@@ -2,7 +2,7 @@ use rand::{self, Rng};
 
 const HAND_SIZE: usize = 6;
 
-#[derive(Copy, Clone, Debug, Serialize, PartialEq)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq)]
 enum CardSuit {
     Clubs,
     Diamonds,
@@ -17,7 +17,7 @@ const SUITS: [CardSuit; 4] = [
     CardSuit::Spades,
 ];
 
-#[derive(Copy, Clone, Debug, Serialize, PartialEq)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq)]
 enum CardValue {
     Two,
     Three,
@@ -50,7 +50,7 @@ const VALUES: [CardValue; 13] = [
     CardValue::Ace,
 ];
 
-#[derive(Copy, Clone, Debug, Serialize, PartialEq)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct Card {
     value: CardValue,
     suit: CardSuit,
@@ -66,7 +66,7 @@ pub enum GamePhase {
 
 #[derive(Clone, Debug)]
 pub struct GameState {
-    active_player: u8,
+    pub active_player: u8,
     num_players: u8,
     hands: Box<[Vec<Card>]>,
     face_up_three: Box<[CardTriplet]>,

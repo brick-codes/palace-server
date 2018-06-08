@@ -18,7 +18,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Instant;
-use ws::{listen, CloseCode, Handler, Handshake, Message, Sender};
+use ws::{CloseCode, Handler, Handshake, Message, Sender};
 
 #[derive(PartialEq, Eq, Hash, Serialize, Deserialize, Clone, Copy)]
 struct PlayerId(#[serde(serialize_with = "as_hex_str", deserialize_with = "hex_to_u128")] u128);
@@ -119,11 +119,21 @@ struct StartGameMessage {
 }
 
 #[derive(Deserialize)]
+struct ChooseFaceupMessage {
+    lobby_id: LobbyId,
+    player_id: PlayerId,
+    card_one: game::Card,
+    card_two: game::Card,
+    card_three: game::Card,
+}
+
+#[derive(Deserialize)]
 enum PalaceMessage {
     NewLobby(NewLobbyMessage),
     JoinLobby(JoinLobbyMessage),
     ListLobbies,
     StartGame(StartGameMessage),
+    ChooseFaceup(ChooseFaceupMessage),
 }
 
 #[derive(Serialize)]
@@ -263,6 +273,33 @@ impl Handler for Server {
                                 serde_json::to_vec("lobby does not exist")
                             }
                         }
+                        PalaceMessage::ChooseFaceup(message) => {
+                            let mut lobbies = self.lobbies.borrow_mut();
+                            if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
+                                if let Some(ref mut gs) = lobby.game {
+                                    if let Some(player) = lobby.players.get(&message.player_id) {
+                                        if player.turn_number == gs.active_player {
+                                            return self.out.send(serde_json::to_vec("it is not your turn").unwrap());
+                                        }
+                                        match gs.choose_three_faceup(message.card_one, message.card_two, message.card_three) {
+                                            Ok(()) => {
+                                                // TODO send new gs to all players
+                                                serde_json::to_vec("ok")
+                                            }
+                                            Err(e) => {
+                                                serde_json::to_vec("illegal")
+                                            }
+                                        }
+                                    } else {
+                                        serde_json::to_vec("player does not exist")
+                                    }
+                                } else {
+                                    serde_json::to_vec("game has not started")
+                                }
+                            } else {
+                                serde_json::to_vec("lobby does not exist")
+                            }
+                        }
                     };
                     self.out.send(ws::Message::binary(response.unwrap()))
                 } else {
@@ -292,9 +329,9 @@ impl Handler for Server {
 }
 
 fn main() {
-    // @Performance this could be a *mut pointer w/ unsafe
+    // @Performance we could make a *mut pointer w/ unsafe
     let lobbies = Rc::new(RefCell::new(HashMap::new()));
-    listen("0.0.0.0:3012", |out| Server {
+    ws::listen("0.0.0.0:3012", |out| Server {
         out: out,
         lobbies: lobbies.clone(),
         connected_lobby_player: None,
