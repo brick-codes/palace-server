@@ -60,6 +60,7 @@ pub struct Card {
 pub enum GamePhase {
     Setup,
     Play,
+    Complete,
 }
 
 #[derive(Clone, Debug)]
@@ -73,6 +74,7 @@ pub struct GameState {
     pile_cards: Vec<Card>,
     cur_phase: GamePhase,
     last_cards_played: Vec<Card>,
+    out_players: Vec<u8>,
 }
 
 impl GameState {
@@ -107,6 +109,7 @@ impl GameState {
             pile_cards: Vec::new(),
             cur_phase: GamePhase::Setup,
             last_cards_played: Vec::new(),
+            out_players: Vec::new(),
         }
     }
 
@@ -189,6 +192,26 @@ impl GameState {
     }
 
     pub fn make_play(&mut self, cards: Box<[Card]>) -> Result<(), &'static str> {
+        #[derive(PartialEq)]
+        enum CardZone {
+            Hand,
+            FaceUpThree,
+            FaceDownThree
+        }
+
+        // Validate phase
+        if self.cur_phase != GamePhase::Play {
+            return Err("Can only choose three faceup cards during Setup phase");
+        }
+
+        let (card_zone, cards) = if self.hands[self.active_player as usize].len() != 0 {
+            (CardZone::Hand, cards)
+        } else if self.face_up_three[self.active_player as usize].len() != 0 {
+            (CardZone::FaceUpThree, cards)
+        } else {
+            (CardZone::FaceDownThree, vec![self.face_down_three[self.active_player as usize].pop().unwrap()].into_boxed_slice())
+        };
+
         if cards.len() == 0 {
             return Err("Have to play at least one card");
         }
@@ -210,27 +233,58 @@ impl GameState {
             (x @ _, y @ _) => x >= y,
         };
 
-        // Determine which zone we are playing from
-        // move cards from that zone to pile
-        if self.hands[self.active_player as usize].len() != 0 {
-            // Play from hand
-        } else if self.face_up_three[self.active_player as usize].len() != 0 {
-            // Play from face up three
-        } else {
-            // Play from face down three
+        // Remove cards from old zone
+        match card_zone {
+            CardZone::Hand => {
+                let backup_hand = self.hands[self.active_player as usize].clone();
+                for card in cards.iter() {
+                    if let None = self.hands[self.active_player as usize].remove_item(card) {
+                        self.hands[self.active_player as usize] = backup_hand;
+                        return Err("can only play cards that you have");
+                    }
+                }
+            }
+            CardZone::FaceUpThree => {
+                let backup_three = self.face_up_three[self.active_player as usize].clone();
+                for card in cards.iter() {
+                    if let None = self.face_up_three[self.active_player as usize].remove_item(card) {
+                        self.face_up_three[self.active_player as usize] = backup_three;
+                        return Err("can only play cards that you have");
+                    }
+                }
+            }
+            CardZone::FaceDownThree => {
+                // Already popped
+            }
         }
+
+        // Put cards in pile
+        self.pile_cards.extend_from_slice(&cards);
 
         self.last_cards_played.clear();
         self.last_cards_played.extend_from_slice(&cards);
 
-        if !is_playable {
+        let player_out = if !is_playable {
             self.hands[self.active_player as usize].extend_from_slice(&self.pile_cards);
             self.pile_cards.clear();
-        }
+            false
+        } else if self.hands[self.active_player as usize].len() == 0 && self.face_up_three[self.active_player as usize].len() == 0 && self.face_down_three[self.active_player as usize].len() == 0 {
+            self.out_players.push(self.active_player);
+            if self.out_players.len() as u8 == self.num_players - 1 {
+                self.cur_phase = GamePhase::Complete;
+                return Ok(())
+            }
+            true
+        } else {
+            false
+        };
 
         if card_value == CardValue::Ten || self.top_n_cards_same() {
             self.cleared_cards.extend_from_slice(&self.pile_cards);
             self.pile_cards.clear();
+            if player_out {
+                self.rotate_play();
+            }
         } else {
             self.rotate_play();
         }
@@ -239,8 +293,11 @@ impl GameState {
     }
 
     fn top_n_cards_same(&self) -> bool {
-        // TODO: FIX FOR FOURS
-        let top_value = self.effective_top_card();
+        let top_value = if let Some(card) = self.pile_cards.last() {
+            card.value
+        } else {
+            return false;
+        };
         let mut top_n_same = 0;
         for card in self.pile_cards.iter().rev() {
             if card.value == top_value {
@@ -260,8 +317,14 @@ impl GameState {
 
     fn rotate_play(&mut self) {
         self.active_player += 1;
+        while self.out_players.contains(&self.active_player) {
+            self.active_player += 1;
+        }
         if self.active_player == self.num_players {
             self.active_player = 0;
+        }
+        while self.out_players.contains(&self.active_player) {
+            self.active_player += 1;
         }
     }
 

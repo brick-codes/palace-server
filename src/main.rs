@@ -1,4 +1,4 @@
-#![feature(catch_expr)]
+#![feature(catch_expr, vec_remove_item)]
 
 extern crate either;
 extern crate rand;
@@ -284,7 +284,7 @@ impl Handler for Server {
                                 if let Some(ref mut gs) = lobby.game {
                                     let result;
                                     if let Some(player) = lobby.players.get(&message.player_id) {
-                                        if player.turn_number == gs.active_player {
+                                        if player.turn_number != gs.active_player {
                                             return self.out.send(
                                                 serde_json::to_vec("it is not your turn").unwrap(),
                                             );
