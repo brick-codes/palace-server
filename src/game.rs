@@ -118,8 +118,18 @@ impl GameState {
                 .map(|x| x.len())
                 .collect::<Vec<_>>()
                 .into_boxed_slice(),
-            face_up_three: self.face_up_three.iter().map(|x| x.as_ref()).collect::<Vec<_>>().into_boxed_slice(),
-            face_down_three: self.face_down_three.iter().map(|x| x.len() as u8).collect::<Vec<_>>().into_boxed_slice(),
+            face_up_three: self
+                .face_up_three
+                .iter()
+                .map(|x| x.as_ref())
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+            face_down_three: self
+                .face_down_three
+                .iter()
+                .map(|x| x.len() as u8)
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
             top_card: self.pile_cards.last().cloned(),
             pile_size: self.pile_cards.len(),
             cleared_size: self.cleared_cards.len(),
@@ -180,11 +190,15 @@ impl GameState {
 
     pub fn make_play(&mut self, cards: Box<[Card]>) -> Result<(), &'static str> {
         if cards.len() == 0 {
-            return Err("Have to play at least one card")
+            return Err("Have to play at least one card");
         }
 
-        if cards.windows(2).filter(|cards| cards[0].value != cards[1].value).count() != 0 {
-            return Err("Can only play multiple cards if each card has the same value")
+        if cards
+            .windows(2)
+            .filter(|cards| cards[0].value != cards[1].value)
+            .count() != 0
+        {
+            return Err("Can only play multiple cards if each card has the same value");
         }
 
         let card_value = cards[0].value;
@@ -193,7 +207,7 @@ impl GameState {
             (CardValue::Two, _) => true,
             (CardValue::Four, _) => true,
             (CardValue::Ten, y @ _) => y != CardValue::Seven,
-            (x @ _, y @ _) => x >= y
+            (x @ _, y @ _) => x >= y,
         };
 
         // Determine which zone we are playing from
@@ -208,7 +222,6 @@ impl GameState {
 
         self.last_cards_played.clear();
         self.last_cards_played.extend_from_slice(&cards);
-
 
         if !is_playable {
             self.hands[self.active_player as usize].extend_from_slice(&self.pile_cards);
@@ -281,7 +294,7 @@ pub struct PublicGameState<'a> {
     cleared_size: usize,
     cur_phase: GamePhase,
     active_player: u8,
-    last_cards_played: &'a [Card]
+    last_cards_played: &'a [Card],
 }
 
 mod test {

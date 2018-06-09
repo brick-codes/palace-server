@@ -189,10 +189,12 @@ impl Handler for Server {
                                 },
                             );
                             self.connected_lobby_player = Some((lobby_id, player_id));
-                            serde_json::to_vec(&PalaceOutMessage::NewLobbyResponse(&NewLobbyResponse {
-                                player_id: player_id,
-                                lobby_id: lobby_id,
-                            }))
+                            serde_json::to_vec(&PalaceOutMessage::NewLobbyResponse(
+                                &NewLobbyResponse {
+                                    player_id: player_id,
+                                    lobby_id: lobby_id,
+                                },
+                            ))
                         }
                         PalaceMessage::JoinLobby(message) => {
                             let mut lobbies = self.lobbies.borrow_mut();
