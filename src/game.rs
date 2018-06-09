@@ -1,4 +1,5 @@
 use rand::{self, Rng};
+use std::iter::FromIterator;
 
 const HAND_SIZE: usize = 6;
 
@@ -17,7 +18,7 @@ const SUITS: [CardSuit; 4] = [
     CardSuit::Spades,
 ];
 
-#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, PartialOrd)]
 enum CardValue {
     Two,
     Three,
@@ -56,8 +57,6 @@ pub struct Card {
     suit: CardSuit,
 }
 
-pub type CardTriplet = (Option<Card>, Option<Card>, Option<Card>);
-
 #[derive(Copy, Clone, Debug, Serialize, PartialEq)]
 pub enum GamePhase {
     Setup,
@@ -69,11 +68,12 @@ pub struct GameState {
     pub active_player: u8,
     num_players: u8,
     hands: Box<[Vec<Card>]>,
-    face_up_three: Box<[CardTriplet]>,
-    face_down_three: Box<[CardTriplet]>,
+    face_up_three: Box<[Vec<Card>]>,
+    face_down_three: Box<[Vec<Card>]>,
     cleared_cards: Vec<Card>,
     pile_cards: Vec<Card>,
     cur_phase: GamePhase,
+    last_cards_played: Vec<Card>,
 }
 
 impl GameState {
@@ -94,16 +94,8 @@ impl GameState {
         let mut face_up_three = Vec::with_capacity(num_players as usize);
         let mut hands = Vec::with_capacity(num_players as usize);
         for _ in 0..num_players {
-            face_down_three.push((
-                Some(deck.next().unwrap()),
-                Some(deck.next().unwrap()),
-                Some(deck.next().unwrap()),
-            ));
-            face_up_three.push((
-                Some(deck.next().unwrap()),
-                Some(deck.next().unwrap()),
-                Some(deck.next().unwrap()),
-            ));
+            face_up_three.push(deck.by_ref().take(3).collect());
+            face_down_three.push(deck.by_ref().take(3).collect());
             hands.push(deck.by_ref().take(HAND_SIZE).collect());
         }
         GameState {
@@ -115,36 +107,11 @@ impl GameState {
             cleared_cards: Vec::new(),
             pile_cards: Vec::new(),
             cur_phase: GamePhase::Setup,
+            last_cards_played: Vec::new(),
         }
     }
 
     pub fn public_state(&self) -> PublicGameState {
-        let mut face_up_cards = vec![];
-        for triplet in self.face_up_three.iter() {
-            face_up_cards.push(Vec::new());
-            if let Some(card) = triplet.0 {
-                face_up_cards.last_mut().unwrap().push(card)
-            }
-            if let Some(card) = triplet.1 {
-                face_up_cards.last_mut().unwrap().push(card)
-            }
-            if let Some(card) = triplet.2 {
-                face_up_cards.last_mut().unwrap().push(card)
-            }
-        }
-        let mut face_down_cards: Vec<u8> = vec![];
-        for triplet in self.face_down_three.iter() {
-            face_down_cards.push(0);
-            if triplet.0.is_some() {
-                *face_down_cards.last_mut().unwrap() += 1
-            }
-            if triplet.1.is_some() {
-                *face_down_cards.last_mut().unwrap() += 1
-            }
-            if triplet.2.is_some() {
-                *face_down_cards.last_mut().unwrap() += 1
-            }
-        }
         PublicGameState {
             hands: self
                 .hands
@@ -152,17 +119,14 @@ impl GameState {
                 .map(|x| x.len())
                 .collect::<Vec<_>>()
                 .into_boxed_slice(),
-            face_up_three: face_up_cards
-                .into_iter()
-                .map(|x| x.into_boxed_slice())
-                .collect::<Vec<_>>()
-                .into_boxed_slice(),
-            face_down_three: face_down_cards.into_boxed_slice(),
+            face_up_three: self.face_up_three.iter().map(|x| x.clone().into_boxed_slice()).collect::<Vec<_>>().into_boxed_slice(),
+            face_down_three: self.face_down_three.iter().map(|x| x.len() as u8).collect::<Vec<_>>().into_boxed_slice(),
             top_card: self.pile_cards.last().cloned(),
             pile_size: self.pile_cards.len(),
             cleared_size: self.cleared_cards.len(),
             cur_phase: self.cur_phase,
             active_player: self.active_player,
+            last_cards_played: self.last_cards_played.clone().into_boxed_slice(),
         }
     }
 
@@ -179,10 +143,7 @@ impl GameState {
 
         // Combine hand + face up cards
         let mut all_cards = self.hands[self.active_player as usize].clone();
-        let face_up_cards = self.face_up_three[self.active_player as usize];
-        all_cards.push(face_up_cards.0.unwrap());
-        all_cards.push(face_up_cards.1.unwrap());
-        all_cards.push(face_up_cards.2.unwrap());
+        all_cards.extend_from_slice(&self.face_up_three[self.active_player as usize]);
 
         // Calculate the new hand after removing new face up cards
         let mut card_one_removed = false;
@@ -207,8 +168,7 @@ impl GameState {
         }
 
         // Mutate state
-        self.face_up_three[self.active_player as usize] =
-            (Some(card_one), Some(card_two), Some(card_three));
+        self.face_up_three[self.active_player as usize] = vec![card_one, card_two, card_three];
         self.hands[self.active_player as usize] = new_hand;
         self.rotate_play();
 
@@ -230,17 +190,56 @@ impl GameState {
 
         let card_value = cards[0].value;
 
-        let is_playable = {
-            match self.get_effective_top_card() {
-                CardValue::Two => true,
-                CardValue::Three => card_value != CardValue::Two,
-                _ => true
-            }
+        let is_playable = match (card_value, self.effective_top_card()) {
+            (CardValue::Two, _) => true,
+            (CardValue::Four, _) => true,
+            (CardValue::Ten, y @ _) => y != CardValue::Seven,
+            (x @ _, y @ _) => x >= y
         };
 
-        self.rotate_play();
+        // Determine which zone we are playing from
+        // move cards from that zone to pile
+        if self.hands[self.active_player as usize].len() != 0 {
+            // Play from hand
+        } else if self.face_up_three[self.active_player as usize].len() != 0 {
+            // Play from face up three
+        } else {
+            // Play from face down three
+        }
+
+        self.last_cards_played.clear();
+        self.last_cards_played.extend_from_slice(&cards);
+
+
+        if !is_playable {
+            self.hands[self.active_player as usize].extend_from_slice(&self.pile_cards);
+            self.pile_cards.clear();
+        }
+
+        if card_value == CardValue::Ten || self.top_n_cards_same() {
+            self.cleared_cards.extend_from_slice(&self.pile_cards);
+            self.pile_cards.clear();
+        } else {
+            self.rotate_play();
+        }
 
         Ok(())
+    }
+
+    fn top_n_cards_same(&self) -> bool {
+        // TODO: FIX FOR FOURS
+        let top_value = self.effective_top_card();
+        let mut top_n_same = 0;
+        for card in self.pile_cards.iter().rev() {
+            if card.value == top_value {
+                top_n_same += 1;
+            } else if card.value == CardValue::Four {
+                continue;
+            } else {
+                break;
+            }
+        }
+        top_n_same == self.num_players
     }
 
     pub fn get_hand(&self, player_num: u8) -> &[Card] {
@@ -254,7 +253,7 @@ impl GameState {
         }
     }
 
-    fn get_effective_top_card(&self) -> CardValue {
+    fn effective_top_card(&self) -> CardValue {
         let mut index = self.pile_cards.len() - 1;
         let effective_top_card_value = if let Some(card) = self.pile_cards.get(index) {
             card.value
@@ -283,6 +282,7 @@ pub struct PublicGameState {
     cleared_size: usize,
     cur_phase: GamePhase,
     active_player: u8,
+    last_cards_played: Box<[Card]>
 }
 
 mod test {
@@ -295,5 +295,12 @@ mod test {
         let pub_state = new_game.public_state();
         let serialized = ::serde_json::to_string(&pub_state).unwrap();
         println!("{}", serialized);
+    }
+
+    #[test]
+    fn test_enum_order() {
+        use super::*;
+
+        assert!(CardValue::Ace > CardValue::Two);
     }
 }

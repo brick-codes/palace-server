@@ -138,8 +138,8 @@ enum PalaceMessage {
 
 #[derive(Serialize)]
 enum PalaceOutMessage<'a> {
-    NewLobby(&'a NewLobbyResponse),
-    JoinLobby(&'a JoinLobbyResponse),
+    NewLobbyResponse(&'a NewLobbyResponse),
+    JoinLobbyResponse(&'a JoinLobbyResponse),
     LobbyList(&'a [LobbyDisplay<'a>]),
 }
 
@@ -189,7 +189,7 @@ impl Handler for Server {
                                 },
                             );
                             self.connected_lobby_player = Some((lobby_id, player_id));
-                            serde_json::to_vec(&PalaceOutMessage::NewLobby(&NewLobbyResponse {
+                            serde_json::to_vec(&PalaceOutMessage::NewLobbyResponse(&NewLobbyResponse {
                                 player_id: player_id,
                                 lobby_id: lobby_id,
                             }))
@@ -216,7 +216,7 @@ impl Handler for Server {
                                     );
                                     self.connected_lobby_player =
                                         Some((message.lobby_id, player_id));
-                                    serde_json::to_vec(&PalaceOutMessage::JoinLobby(
+                                    serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(
                                         &JoinLobbyResponse {
                                             player_id: player_id,
                                         },
