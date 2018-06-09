@@ -10,12 +10,7 @@ enum CardSuit {
     Spades,
 }
 
-const SUITS: [CardSuit; 4] = [
-    CardSuit::Clubs,
-    CardSuit::Diamonds,
-    CardSuit::Hearts,
-    CardSuit::Spades,
-];
+const SUITS: [CardSuit; 4] = [CardSuit::Clubs, CardSuit::Diamonds, CardSuit::Hearts, CardSuit::Spades];
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, PartialOrd)]
 enum CardValue {
@@ -196,7 +191,7 @@ impl GameState {
         enum CardZone {
             Hand,
             FaceUpThree,
-            FaceDownThree
+            FaceDownThree,
         }
 
         // Validate phase
@@ -211,10 +206,13 @@ impl GameState {
             (CardZone::FaceUpThree, cards)
         } else {
             if cards.len() != 0 {
-                return Err("Can't choose any cards when playing from the face down three")
+                return Err("Can't choose any cards when playing from the face down three");
             }
             // In the case of face down cards, we can safely pop now as there's no way this play can fail
-            (CardZone::FaceDownThree, vec![self.face_down_three[self.active_player as usize].pop().unwrap()].into_boxed_slice())
+            (
+                CardZone::FaceDownThree,
+                vec![self.face_down_three[self.active_player as usize].pop().unwrap()].into_boxed_slice(),
+            )
         };
 
         if cards.len() == 0 {
@@ -273,11 +271,14 @@ impl GameState {
             self.hands[self.active_player as usize].extend_from_slice(&self.pile_cards);
             self.pile_cards.clear();
             false
-        } else if self.hands[self.active_player as usize].len() == 0 && self.face_up_three[self.active_player as usize].len() == 0 && self.face_down_three[self.active_player as usize].len() == 0 {
+        } else if self.hands[self.active_player as usize].len() == 0
+            && self.face_up_three[self.active_player as usize].len() == 0
+            && self.face_down_three[self.active_player as usize].len() == 0
+        {
             self.out_players.push(self.active_player);
             if self.out_players.len() as u8 == self.num_players - 1 {
                 self.cur_phase = GamePhase::Complete;
-                return Ok(())
+                return Ok(());
             }
             true
         } else {

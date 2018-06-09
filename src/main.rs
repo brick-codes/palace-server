@@ -157,14 +157,8 @@ impl Handler for Server {
         match msg {
             Message::Text(_) => self.out.close(CloseCode::Unsupported),
             Message::Binary(binary) => {
-                /*
-                unsafe {
-                    let string = String::from_utf8_unchecked(binary.clone());
-                    println!("{}", string);
-                    let pm: PalaceMessage = serde_json::from_str(&string).unwrap();
-                } */
                 if let Ok(message) = serde_json::from_slice::<PalaceMessage>(&binary) {
-                    let response: Result<Vec<u8>, serde_json::Error> = match message {
+                    match message {
                         PalaceMessage::NewLobby(message) => {
                             let mut lobbies = self.lobbies.borrow_mut();
                             let lobby_id = LobbyId(rand::random());
@@ -191,43 +185,46 @@ impl Handler for Server {
                                 },
                             );
                             self.connected_lobby_player = Some((lobby_id, player_id));
-                            serde_json::to_vec(&PalaceOutMessage::NewLobbyResponse(
-                                &NewLobbyResponse {
+                            self.out.send(
+                                serde_json::to_vec(&PalaceOutMessage::NewLobbyResponse(&NewLobbyResponse {
                                     player_id: player_id,
                                     lobby_id: lobby_id,
-                                },
-                            ))
+                                })).unwrap(),
+                            )
                         }
                         PalaceMessage::JoinLobby(message) => {
                             let mut lobbies = self.lobbies.borrow_mut();
                             let mut lobby_opt = lobbies.get_mut(&message.lobby_id);
                             if let Some(lobby) = lobby_opt {
                                 if lobby.game.is_some() {
-                                    serde_json::to_vec("game has started")
-                                } else if lobby.password != message.password {
-                                    serde_json::to_vec("bad password")
-                                } else if lobby.players.len() as u8 >= lobby.max_players {
-                                    serde_json::to_vec("lobby is full")
-                                } else {
-                                    let player_id = PlayerId(rand::random());
-                                    lobby.players.insert(
-                                        player_id,
-                                        Player {
-                                            name: message.player_name,
-                                            connection: Either::Left(self.out.clone()),
-                                            turn_number: 0,
-                                        },
-                                    );
-                                    self.connected_lobby_player =
-                                        Some((message.lobby_id, player_id));
-                                    serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(
-                                        &JoinLobbyResponse {
-                                            player_id: player_id,
-                                        },
-                                    ))
+                                    return self.out.send(serde_json::to_vec("game has started").unwrap());
                                 }
+
+                                if lobby.password != message.password {
+                                    return self.out.send(serde_json::to_vec("bad password").unwrap());
+                                }
+
+                                if lobby.players.len() as u8 >= lobby.max_players {
+                                    return self.out.send(serde_json::to_vec("lobby is full").unwrap());
+                                }
+
+                                let player_id = PlayerId(rand::random());
+                                lobby.players.insert(
+                                    player_id,
+                                    Player {
+                                        name: message.player_name,
+                                        connection: Either::Left(self.out.clone()),
+                                        turn_number: 0,
+                                    },
+                                );
+                                self.connected_lobby_player = Some((message.lobby_id, player_id));
+                                self.out.send(
+                                    serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(&JoinLobbyResponse {
+                                        player_id: player_id,
+                                    })).unwrap(),
+                                )
                             } else {
-                                serde_json::to_vec("lobby does not exist")
+                                self.out.send(serde_json::to_vec("lobby does not exist").unwrap())
                             }
                         }
                         PalaceMessage::ListLobbies => {
@@ -235,49 +232,57 @@ impl Handler for Server {
                             let mut lobbies = self.lobbies.borrow_mut();
                             // @Performance we should be able to serialize with Serializer::collect_seq
                             // and avoid collecting into a vector
-                            serde_json::to_vec(&PalaceOutMessage::LobbyList(
-                                &lobbies.values().map(|x| x.display()).collect::<Vec<_>>(),
-                            ))
+                            self.out.send(
+                                serde_json::to_vec(&PalaceOutMessage::LobbyList(
+                                    &lobbies.values().map(|x| x.display()).collect::<Vec<_>>(),
+                                )).unwrap(),
+                            )
                         }
                         PalaceMessage::StartGame(message) => {
                             let mut lobbies = self.lobbies.borrow_mut();
                             if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
                                 if message.player_id != lobby.owner {
-                                    serde_json::to_vec("must be the owner to start game")
-                                } else if lobby.players.len() < 2 {
-                                    serde_json::to_vec(
-                                        "can't start a game with less than 2 players",
-                                    )
-                                } else {
-                                    let num_players = lobby.players.len() as u8;
-                                    let gs = GameState::new(num_players);
-                                    let public_gs_json =
-                                        serde_json::to_vec(&PalaceOutMessage::PublicGameState(&gs.public_state())).unwrap();
-                                    lobby.game = Some(gs);
-                                    let mut turn_numbers: Vec<
-                                        u8,
-                                    > = (0..num_players).collect();
-                                    rand::thread_rng().shuffle(&mut turn_numbers);
-                                    let mut turn_numbers = turn_numbers.into_iter();
-                                    for player in lobby.players.values_mut() {
-                                        player.turn_number = turn_numbers.next().unwrap();
-                                        match player.connection {
-                                            either::Left(ref mut sender) => {
-                                                sender.send(public_gs_json.clone())?;
-                                                match lobby.game {
-                                                    Some(ref mut gs) => {
-                                                        sender.send(serde_json::to_vec(&PalaceOutMessage::Hand(gs.get_hand(player.turn_number))).unwrap())?;
-                                                    }
-                                                    None => unreachable!(),
-                                                }
-                                            }
-                                            either::Right(_) => (),
-                                        }
-                                    }
-                                    return Ok(());
+                                    return self
+                                        .out
+                                        .send(serde_json::to_vec("must be the owner to start game").unwrap());
                                 }
+
+                                if lobby.players.len() < 2 {
+                                    return self.out.send(
+                                        serde_json::to_vec("can't start a game with less than 2 players").unwrap(),
+                                    );
+                                }
+
+                                let num_players = lobby.players.len() as u8;
+                                let gs = GameState::new(num_players);
+                                let public_gs_json =
+                                    serde_json::to_vec(&PalaceOutMessage::PublicGameState(&gs.public_state())).unwrap();
+                                lobby.game = Some(gs);
+                                let mut turn_numbers: Vec<u8> = (0..num_players).collect();
+                                rand::thread_rng().shuffle(&mut turn_numbers);
+                                let mut turn_numbers = turn_numbers.into_iter();
+                                for player in lobby.players.values_mut() {
+                                    player.turn_number = turn_numbers.next().unwrap();
+                                    match player.connection {
+                                        either::Left(ref mut sender) => {
+                                            sender.send(public_gs_json.clone())?;
+                                            match lobby.game {
+                                                Some(ref mut gs) => {
+                                                    sender.send(
+                                                        serde_json::to_vec(&PalaceOutMessage::Hand(
+                                                            gs.get_hand(player.turn_number),
+                                                        )).unwrap(),
+                                                    )?;
+                                                }
+                                                None => unreachable!(),
+                                            }
+                                        }
+                                        either::Right(_) => (),
+                                    }
+                                }
+                                Ok(())
                             } else {
-                                serde_json::to_vec("lobby does not exist")
+                                self.out.send(serde_json::to_vec("lobby does not exist").unwrap())
                             }
                         }
                         PalaceMessage::ChooseFaceup(message) => {
@@ -287,9 +292,7 @@ impl Handler for Server {
                                     let result;
                                     if let Some(player) = lobby.players.get(&message.player_id) {
                                         if player.turn_number != gs.active_player {
-                                            return self.out.send(
-                                                serde_json::to_vec("it is not your turn").unwrap(),
-                                            );
+                                            return self.out.send(serde_json::to_vec("it is not your turn").unwrap());
                                         }
                                         result = gs.choose_three_faceup(
                                             message.card_one,
@@ -297,41 +300,37 @@ impl Handler for Server {
                                             message.card_three,
                                         );
                                     } else {
-                                        return self.out.send(
-                                            serde_json::to_vec("player does not exist").unwrap(),
-                                        );
+                                        return self.out.send(serde_json::to_vec("player does not exist").unwrap());
                                     }
                                     if result.is_ok() {
-                                        let public_gs_json =
-                                            serde_json::to_vec(&PalaceOutMessage::PublicGameState(&gs.public_state())).unwrap();
+                                        let public_gs_json = serde_json::to_vec(&PalaceOutMessage::PublicGameState(
+                                            &gs.public_state(),
+                                        )).unwrap();
                                         for player in lobby.players.values_mut() {
                                             match player.connection {
                                                 either::Left(ref mut sender) => {
                                                     sender.send(public_gs_json.clone())?;
-                                                    sender.send(serde_json::to_vec(&PalaceOutMessage::Hand(gs.get_hand(player.turn_number))).unwrap())?;
+                                                    sender.send(
+                                                        serde_json::to_vec(&PalaceOutMessage::Hand(
+                                                            gs.get_hand(player.turn_number),
+                                                        )).unwrap(),
+                                                    )?;
                                                 }
                                                 either::Right(_) => (),
                                             }
                                         }
-                                        return Ok(());
+                                        Ok(())
                                     } else {
-                                        return self
-                                            .out
-                                            .send(serde_json::to_vec("illegal").unwrap());
+                                        self.out.send(serde_json::to_vec("illegal").unwrap())
                                     }
                                 } else {
-                                    return self
-                                        .out
-                                        .send(serde_json::to_vec("game has not started").unwrap());
+                                    self.out.send(serde_json::to_vec("game has not started").unwrap())
                                 }
                             } else {
-                                return self
-                                    .out
-                                    .send(serde_json::to_vec("lobby does not exist").unwrap());
+                                self.out.send(serde_json::to_vec("lobby does not exist").unwrap())
                             }
                         }
-                    };
-                    self.out.send(ws::Message::binary(response.unwrap()))
+                    }
                 } else {
                     println!("unknown message");
                     self.out.close(CloseCode::Invalid)
