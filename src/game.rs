@@ -196,7 +196,7 @@ impl GameState {
 
         // Validate phase
         if self.cur_phase != GamePhase::Play {
-            return Err("Can only choose three faceup cards during Setup phase");
+            return Err("Can only play cards during the play phase");
         }
 
         // Figure out which zone we are retrieving cards from
