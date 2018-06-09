@@ -128,12 +128,20 @@ struct ChooseFaceupMessage {
 }
 
 #[derive(Deserialize)]
+struct MakePlayMessage {
+   cards: Box<[game::Card]>,
+   lobby_id: LobbyId,
+   player_id: PlayerId,
+}
+
+#[derive(Deserialize)]
 enum PalaceMessage {
    NewLobby(NewLobbyMessage),
    JoinLobby(JoinLobbyMessage),
    ListLobbies,
    StartGame(StartGameMessage),
    ChooseFaceup(ChooseFaceupMessage),
+   MakePlay(MakePlayMessage),
 }
 
 #[derive(Serialize)]
@@ -337,17 +345,17 @@ impl Server {
             let mut lobbies = self.lobbies.borrow_mut();
             if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
                if let Some(ref mut gs) = lobby.game {
-                  let result;
-                  if let Some(player) = lobby.players.get(&message.player_id) {
+                  let result = if let Some(player) = lobby.players.get(&message.player_id) {
                      if player.turn_number != gs.active_player {
                         self.out.send(serde_json::to_vec("it is not your turn")?)?;
                         return Ok(());
                      }
-                     result = gs.choose_three_faceup(message.card_one, message.card_two, message.card_three);
+                     gs.choose_three_faceup(message.card_one, message.card_two, message.card_three)
                   } else {
                      self.out.send(serde_json::to_vec("player does not exist")?)?;
                      return Ok(());
-                  }
+                  };
+
                   if result.is_ok() {
                      let public_gs_json =
                         serde_json::to_vec(&PalaceOutMessage::PublicGameState(&gs.public_state())).unwrap();
@@ -362,11 +370,53 @@ impl Server {
                            either::Right(_) => (),
                         }
                      }
-                     Ok(())
                   } else {
                      self.out.send(serde_json::to_vec("illegal")?)?;
-                     Ok(())
                   }
+                  Ok(())
+               } else {
+                  self.out.send(serde_json::to_vec("game has not started")?)?;
+                  Ok(())
+               }
+            } else {
+               self.out.send(serde_json::to_vec("lobby does not exist")?)?;
+               Ok(())
+            }
+         }
+         PalaceMessage::MakePlay(message) => {
+            let mut lobbies = self.lobbies.borrow_mut();
+            if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
+               if let Some(ref mut gs) = lobby.game {
+                  let result = if let Some(player) = lobby.players.get(&message.player_id) {
+                     if player.turn_number != gs.active_player {
+                        self.out.send(serde_json::to_vec("it is not your turn")?)?;
+                        return Ok(());
+                     }
+                     gs.make_play(message.cards)
+                  } else {
+                     self.out.send(serde_json::to_vec("player does not exist")?)?;
+                     return Ok(());
+                  };
+
+                  if result.is_ok() {
+                     let public_gs_json =
+                        serde_json::to_vec(&PalaceOutMessage::PublicGameState(&gs.public_state())).unwrap();
+                     for player in lobby.players.values_mut() {
+                        match player.connection {
+                           either::Left(ref mut sender) => {
+                              sender.send(public_gs_json.clone())?;
+                              sender.send(serde_json::to_vec(&PalaceOutMessage::Hand(
+                                 gs.get_hand(player.turn_number),
+                              ))?)?;
+                           }
+                           either::Right(_) => (),
+                        }
+                     }
+                  } else {
+                     self.out.send(serde_json::to_vec("illegal")?)?;
+                  }
+
+                  Ok(())
                } else {
                   self.out.send(serde_json::to_vec("game has not started")?)?;
                   Ok(())
