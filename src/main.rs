@@ -61,7 +61,7 @@ impl Lobby {
       max_players: self.max_players,
       started: self.game.is_some(),
       has_password: !self.password.is_empty(),
-      owner: &self.players.get(&self.owner).unwrap().name,
+      owner: &self.players[&self.owner].name,
       name: &self.name,
       age: self.creation_time.elapsed().as_secs(),
     }
@@ -174,7 +174,7 @@ impl Handler for Server {
               lobbies.insert(
                 lobby_id,
                 Lobby {
-                  players: players,
+                  players,
                   game: None,
                   password: message.password,
                   name: message.lobby_name,
@@ -186,8 +186,8 @@ impl Handler for Server {
               self.connected_lobby_player = Some((lobby_id, player_id));
               self.out.send(
                 serde_json::to_vec(&PalaceOutMessage::NewLobbyResponse(&NewLobbyResponse {
-                  player_id: player_id,
-                  lobby_id: lobby_id,
+                  player_id,
+                  lobby_id,
                 })).unwrap(),
               )
             }
@@ -219,7 +219,7 @@ impl Handler for Server {
                 self.connected_lobby_player = Some((message.lobby_id, player_id));
                 self.out.send(
                   serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(&JoinLobbyResponse {
-                    player_id: player_id,
+                    player_id,
                   })).unwrap(),
                 )
               } else {
@@ -351,7 +351,7 @@ fn main() {
   // @Performance we could make a *mut pointer w/ unsafe
   let lobbies = Rc::new(RefCell::new(HashMap::new()));
   ws::listen("0.0.0.0:3012", |out| Server {
-    out: out,
+    out,
     lobbies: lobbies.clone(),
     connected_lobby_player: None,
   }).unwrap()

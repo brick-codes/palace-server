@@ -96,7 +96,7 @@ impl GameState {
     }
     GameState {
       active_player: 0,
-      num_players: num_players,
+      num_players,
       hands: hands.into_boxed_slice(),
       face_down_three: face_down_three.into_boxed_slice(),
       face_up_three: face_up_three.into_boxed_slice(),
@@ -195,12 +195,12 @@ impl GameState {
     }
 
     // Figure out which zone we are retrieving cards from
-    let (card_zone, cards) = if self.hands[self.active_player as usize].len() != 0 {
+    let (card_zone, cards) = if !self.hands[self.active_player as usize].is_empty() {
       (CardZone::Hand, cards)
-    } else if self.face_up_three[self.active_player as usize].len() != 0 {
+    } else if !self.face_up_three[self.active_player as usize].is_empty() {
       (CardZone::FaceUpThree, cards)
     } else {
-      if cards.len() != 0 {
+      if !cards.is_empty() {
         return Err("Can't choose any cards when playing from the face down three");
       }
       // In the case of face down cards, we can safely pop now as there's no way this play can fail
@@ -210,7 +210,7 @@ impl GameState {
       )
     };
 
-    if cards.len() == 0 {
+    if cards.is_empty() {
       return Err("Have to play at least one card");
     }
 
@@ -227,8 +227,8 @@ impl GameState {
     let is_playable = match (card_value, self.effective_top_card()) {
       (CardValue::Two, _) => true,
       (CardValue::Four, _) => true,
-      (CardValue::Ten, y @ _) => y != CardValue::Seven,
-      (x @ _, y @ _) => x >= y,
+      (CardValue::Ten, y) => y != CardValue::Seven,
+      (x, y) => x >= y,
     };
 
     // Remove cards from old zone
@@ -236,7 +236,7 @@ impl GameState {
       CardZone::Hand => {
         let backup_hand = self.hands[self.active_player as usize].clone();
         for card in cards.iter() {
-          if let None = self.hands[self.active_player as usize].remove_item(card) {
+          if self.hands[self.active_player as usize].remove_item(card).is_none() {
             self.hands[self.active_player as usize] = backup_hand;
             return Err("can only play cards that you have");
           }
@@ -245,7 +245,7 @@ impl GameState {
       CardZone::FaceUpThree => {
         let backup_three = self.face_up_three[self.active_player as usize].clone();
         for card in cards.iter() {
-          if let None = self.face_up_three[self.active_player as usize].remove_item(card) {
+          if self.face_up_three[self.active_player as usize].remove_item(card).is_none() {
             self.face_up_three[self.active_player as usize] = backup_three;
             return Err("can only play cards that you have");
           }
@@ -266,9 +266,9 @@ impl GameState {
       self.hands[self.active_player as usize].extend_from_slice(&self.pile_cards);
       self.pile_cards.clear();
       false
-    } else if self.hands[self.active_player as usize].len() == 0
-      && self.face_up_three[self.active_player as usize].len() == 0
-      && self.face_down_three[self.active_player as usize].len() == 0
+    } else if self.hands[self.active_player as usize].is_empty()
+      && self.face_up_three[self.active_player as usize].is_empty()
+      && self.face_down_three[self.active_player as usize].is_empty()
     {
       self.out_players.push(self.active_player);
       if self.out_players.len() as u8 == self.num_players - 1 {
