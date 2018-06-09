@@ -1,5 +1,4 @@
 use rand::{self, Rng};
-use std::iter::FromIterator;
 
 const HAND_SIZE: usize = 6;
 
