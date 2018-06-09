@@ -204,11 +204,16 @@ impl GameState {
             return Err("Can only choose three faceup cards during Setup phase");
         }
 
+        // Figure out which zone we are retrieving cards from
         let (card_zone, cards) = if self.hands[self.active_player as usize].len() != 0 {
             (CardZone::Hand, cards)
         } else if self.face_up_three[self.active_player as usize].len() != 0 {
             (CardZone::FaceUpThree, cards)
         } else {
+            if cards.len() != 0 {
+                return Err("Can't choose any cards when playing from the face down three")
+            }
+            // In the case of face down cards, we can safely pop now as there's no way this play can fail
             (CardZone::FaceDownThree, vec![self.face_down_three[self.active_player as usize].pop().unwrap()].into_boxed_slice())
         };
 
@@ -370,12 +375,5 @@ mod test {
         let pub_state = new_game.public_state();
         let serialized = ::serde_json::to_string(&pub_state).unwrap();
         println!("{}", serialized);
-    }
-
-    #[test]
-    fn test_enum_order() {
-        use super::*;
-
-        assert!(CardValue::Ace > CardValue::Two);
     }
 }
