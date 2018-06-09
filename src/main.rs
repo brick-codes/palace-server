@@ -141,6 +141,8 @@ enum PalaceOutMessage<'a> {
     NewLobbyResponse(&'a NewLobbyResponse),
     JoinLobbyResponse(&'a JoinLobbyResponse),
     LobbyList(&'a [LobbyDisplay<'a>]),
+    PublicGameState(&'a game::PublicGameState<'a>),
+    Hand(&'a [game::Card]),
 }
 
 struct Server {
@@ -250,7 +252,7 @@ impl Handler for Server {
                                     let num_players = lobby.players.len() as u8;
                                     let gs = GameState::new(num_players);
                                     let public_gs_json =
-                                        serde_json::to_vec(&gs.public_state()).unwrap();
+                                        serde_json::to_vec(&PalaceOutMessage::PublicGameState(&gs.public_state())).unwrap();
                                     lobby.game = Some(gs);
                                     let mut turn_numbers: Vec<
                                         u8,
@@ -264,7 +266,7 @@ impl Handler for Server {
                                                 sender.send(public_gs_json.clone())?;
                                                 match lobby.game {
                                                     Some(ref mut gs) => {
-                                                        sender.send(serde_json::to_vec(gs.get_hand(player.turn_number)).unwrap())?;
+                                                        sender.send(serde_json::to_vec(&PalaceOutMessage::Hand(gs.get_hand(player.turn_number))).unwrap())?;
                                                     }
                                                     None => unreachable!(),
                                                 }
@@ -301,12 +303,12 @@ impl Handler for Server {
                                     }
                                     if result.is_ok() {
                                         let public_gs_json =
-                                            serde_json::to_vec(&gs.public_state()).unwrap();
+                                            serde_json::to_vec(&PalaceOutMessage::PublicGameState(&gs.public_state())).unwrap();
                                         for player in lobby.players.values_mut() {
                                             match player.connection {
                                                 either::Left(ref mut sender) => {
                                                     sender.send(public_gs_json.clone())?;
-                                                    sender.send(serde_json::to_vec(gs.get_hand(player.turn_number)).unwrap())?;
+                                                    sender.send(serde_json::to_vec(&PalaceOutMessage::Hand(gs.get_hand(player.turn_number))).unwrap())?;
                                                 }
                                                 either::Right(_) => (),
                                             }
