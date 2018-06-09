@@ -359,13 +359,15 @@ impl Server {
                   if result.is_ok() {
                      let public_gs_json =
                         serde_json::to_vec(&PalaceOutMessage::PublicGameState(&gs.public_state())).unwrap();
-                     for player in lobby.players.values_mut() {
+                     for (id, player) in lobby.players.iter_mut() {
                         match player.connection {
                            either::Left(ref mut sender) => {
                               sender.send(public_gs_json.clone())?;
-                              sender.send(serde_json::to_vec(&PalaceOutMessage::Hand(
-                                 gs.get_hand(player.turn_number),
-                              ))?)?;
+                              if *id == message.player_id {
+                                 sender.send(serde_json::to_vec(&PalaceOutMessage::Hand(
+                                    gs.get_hand(player.turn_number),
+                                 ))?)?;
+                              }
                            }
                            either::Right(_) => (),
                         }
@@ -401,13 +403,15 @@ impl Server {
                   if result.is_ok() {
                      let public_gs_json =
                         serde_json::to_vec(&PalaceOutMessage::PublicGameState(&gs.public_state())).unwrap();
-                     for player in lobby.players.values_mut() {
+                     for (id, player) in lobby.players.iter_mut() {
                         match player.connection {
                            either::Left(ref mut sender) => {
                               sender.send(public_gs_json.clone())?;
-                              sender.send(serde_json::to_vec(&PalaceOutMessage::Hand(
-                                 gs.get_hand(player.turn_number),
-                              ))?)?;
+                              if *id == message.player_id {
+                                 sender.send(serde_json::to_vec(&PalaceOutMessage::Hand(
+                                    gs.get_hand(player.turn_number),
+                                 ))?)?;
+                              }
                            }
                            either::Right(_) => (),
                         }
