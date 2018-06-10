@@ -1,6 +1,8 @@
-#![feature(catch_expr, vec_remove_item)]
+#![feature(vec_remove_item)]
 
 extern crate either;
+#[macro_use]
+extern crate log;
 extern crate rand;
 #[macro_use]
 extern crate serde_derive;
@@ -186,7 +188,10 @@ impl Handler for Server {
                match self.handle_message(message) {
                   Ok(()) => Ok(()),
                   Err(OnMessageError::WebsocketError(e)) => Err(e),
-                  Err(OnMessageError::SerdeError(_e)) => self.out.send(ws::Message::binary("\"InternalServerError\"")),
+                  Err(OnMessageError::SerdeError(e)) => {
+                     error!("Failed to serialize a message: {:?}", e);
+                     self.out.send(ws::Message::binary("\"InternalServerError\""))
+                  }
                }
             } else {
                println!("unknown message");
