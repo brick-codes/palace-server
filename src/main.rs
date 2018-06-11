@@ -114,6 +114,14 @@ struct JoinLobbyResponse {
    player_id: PlayerId,
 }
 
+#[derive(Serialize)]
+enum JoinLobbyError {
+   LobbyNotFound,
+   LobbyFull,
+   BadPassword,
+   GameStarted,
+}
+
 #[derive(Deserialize)]
 struct StartGameMessage {
    lobby_id: LobbyId,
@@ -149,7 +157,7 @@ enum PalaceMessage {
 #[derive(Serialize)]
 enum PalaceOutMessage<'a> {
    NewLobbyResponse(&'a NewLobbyResponse),
-   JoinLobbyResponse(&'a JoinLobbyResponse),
+   JoinLobbyResponse(&'a Result<JoinLobbyResponse, JoinLobbyError>),
    LobbyList(&'a [LobbyDisplay<'a>]),
    PublicGameState(&'a game::PublicGameState<'a>),
    Hand(&'a [game::Card]),
@@ -187,7 +195,7 @@ impl Handler for Server {
             if let Ok(message) = serde_json::from_slice::<PalaceMessage>(&binary) {
                match self.handle_message(message) {
                   Ok(()) => Ok(()),
-                  // We don't log error here because that is done
+                  // We don't log an error here because that is done
                   // in `log_and_report_ise_if_failed`
                   // an error here would just be an error sending
                   // ISE which we can't handle sanely
@@ -262,21 +270,33 @@ impl Server {
             Ok(())
          }
          PalaceMessage::JoinLobby(message) => {
+            // TODO (APPLIES TO ALL)
+            // PUT THIS IN A FN THAT RETURNS A RESULT<JoinLobbyResponse, JoinLobbyErr)
+            // DO THE JSON SERIALIZATION / MESSAGE SENDING AT THE TOP LEVEL IN ONE PLACE
             let mut lobbies = self.lobbies.borrow_mut();
             let mut lobby_opt = lobbies.get_mut(&message.lobby_id);
             if let Some(lobby) = lobby_opt {
                if lobby.game.is_some() {
-                  log_and_report_ise_if_failed(&mut self.out, serde_json::to_vec("game has started")?)?;
+                  log_and_report_ise_if_failed(
+                     &mut self.out,
+                     serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(&Err(JoinLobbyError::GameStarted)))?,
+                  )?;
                   return Ok(());
                }
 
                if lobby.password != message.password {
-                  log_and_report_ise_if_failed(&mut self.out, serde_json::to_vec("bad password")?)?;
+                  log_and_report_ise_if_failed(
+                     &mut self.out,
+                     serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(&Err(JoinLobbyError::BadPassword)))?,
+                  )?;
                   return Ok(());
                }
 
                if lobby.players.len() as u8 >= lobby.max_players {
-                  log_and_report_ise_if_failed(&mut self.out, serde_json::to_vec("lobby is full")?)?;
+                  log_and_report_ise_if_failed(
+                     &mut self.out,
+                     serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(&Err(JoinLobbyError::LobbyFull)))?,
+                  )?;
                   return Ok(());
                }
 
@@ -292,11 +312,18 @@ impl Server {
                self.connected_lobby_player = Some((message.lobby_id, player_id));
                log_and_report_ise_if_failed(
                   &mut self.out,
-                  serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(&JoinLobbyResponse { player_id }))?,
+                  serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(&Ok(JoinLobbyResponse {
+                     player_id,
+                  })))?,
                )?;
                Ok(())
             } else {
-               log_and_report_ise_if_failed(&mut self.out, serde_json::to_vec("lobby does not exist")?)?;
+               log_and_report_ise_if_failed(
+                  &mut self.out,
+                  serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(&Err(
+                     JoinLobbyError::LobbyNotFound,
+                  )))?,
+               )?;
                Ok(())
             }
          }
