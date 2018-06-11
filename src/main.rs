@@ -166,6 +166,7 @@ enum PalaceOutMessage<'a> {
 struct Server {
    out: Sender,
    lobbies: Rc<RefCell<HashMap<LobbyId, Lobby>>>,
+   // TODO: investigate a global hashmap of Sender(id?) -> (LobbyId, PlayerId) for this instead of storing this per socket
    connected_lobby_player: Option<(LobbyId, PlayerId)>,
 }
 
@@ -196,7 +197,7 @@ impl Handler for Server {
                match self.handle_message(message) {
                   Ok(()) => Ok(()),
                   // We don't log an error here because that is done
-                  // in `log_and_report_ise_if_failed`
+                  // in `send_or_log_and_report_ise`
                   // an error here would just be an error sending
                   // ISE which we can't handle sanely
                   Err(OnMessageError::WebsocketError(e)) => Err(e),
@@ -260,7 +261,7 @@ impl Server {
                },
             );
             self.connected_lobby_player = Some((lobby_id, player_id));
-            log_and_report_ise_if_failed(
+            send_or_log_and_report_ise(
                &mut self.out,
                serde_json::to_vec(&PalaceOutMessage::NewLobbyResponse(&NewLobbyResponse {
                   player_id,
@@ -277,7 +278,7 @@ impl Server {
             let mut lobby_opt = lobbies.get_mut(&message.lobby_id);
             if let Some(lobby) = lobby_opt {
                if lobby.game.is_some() {
-                  log_and_report_ise_if_failed(
+                  send_or_log_and_report_ise(
                      &mut self.out,
                      serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(&Err(JoinLobbyError::GameStarted)))?,
                   )?;
@@ -285,7 +286,7 @@ impl Server {
                }
 
                if lobby.password != message.password {
-                  log_and_report_ise_if_failed(
+                  send_or_log_and_report_ise(
                      &mut self.out,
                      serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(&Err(JoinLobbyError::BadPassword)))?,
                   )?;
@@ -293,7 +294,7 @@ impl Server {
                }
 
                if lobby.players.len() as u8 >= lobby.max_players {
-                  log_and_report_ise_if_failed(
+                  send_or_log_and_report_ise(
                      &mut self.out,
                      serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(&Err(JoinLobbyError::LobbyFull)))?,
                   )?;
@@ -310,7 +311,7 @@ impl Server {
                   },
                );
                self.connected_lobby_player = Some((message.lobby_id, player_id));
-               log_and_report_ise_if_failed(
+               send_or_log_and_report_ise(
                   &mut self.out,
                   serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(&Ok(JoinLobbyResponse {
                      player_id,
@@ -318,7 +319,7 @@ impl Server {
                )?;
                Ok(())
             } else {
-               log_and_report_ise_if_failed(
+               send_or_log_and_report_ise(
                   &mut self.out,
                   serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(&Err(
                      JoinLobbyError::LobbyNotFound,
@@ -332,7 +333,7 @@ impl Server {
             let mut lobbies = self.lobbies.borrow_mut();
             // @Performance we should be able to serialize with Serializer::collect_seq
             // and avoid collecting into a vector
-            log_and_report_ise_if_failed(
+            send_or_log_and_report_ise(
                &mut self.out,
                serde_json::to_vec(&PalaceOutMessage::LobbyList(
                   &lobbies.values().map(|x| x.display()).collect::<Vec<_>>(),
@@ -344,7 +345,7 @@ impl Server {
             let mut lobbies = self.lobbies.borrow_mut();
             if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
                if message.player_id != lobby.owner {
-                  log_and_report_ise_if_failed(&mut self.out, serde_json::to_vec("must be the owner to start game")?)?;
+                  send_or_log_and_report_ise(&mut self.out, serde_json::to_vec("must be the owner to start game")?)?;
                   return Ok(());
                }
 
@@ -366,10 +367,10 @@ impl Server {
                   player.turn_number = turn_numbers.next().unwrap();
                   match player.connection {
                      either::Left(ref mut sender) => {
-                        let _ = log_and_report_ise_if_failed(sender, public_gs_json.clone());
+                        let _ = send_or_log_and_report_ise(sender, public_gs_json.clone());
                         match lobby.game {
                            Some(ref mut gs) => {
-                              let _ = log_and_report_ise_if_failed(
+                              let _ = send_or_log_and_report_ise(
                                  sender,
                                  serde_json::to_vec(&PalaceOutMessage::Hand(gs.get_hand(player.turn_number))).unwrap(),
                               );
@@ -382,7 +383,7 @@ impl Server {
                }
                Ok(())
             } else {
-               log_and_report_ise_if_failed(&mut self.out, serde_json::to_vec("lobby does not exist")?)?;
+               send_or_log_and_report_ise(&mut self.out, serde_json::to_vec("lobby does not exist")?)?;
                Ok(())
             }
          }
@@ -392,12 +393,12 @@ impl Server {
                if let Some(ref mut gs) = lobby.game {
                   let result = if let Some(player) = lobby.players.get(&message.player_id) {
                      if player.turn_number != gs.active_player {
-                        log_and_report_ise_if_failed(&mut self.out, serde_json::to_vec("it is not your turn")?)?;
+                        send_or_log_and_report_ise(&mut self.out, serde_json::to_vec("it is not your turn")?)?;
                         return Ok(());
                      }
                      gs.choose_three_faceup(message.card_one, message.card_two, message.card_three)
                   } else {
-                     log_and_report_ise_if_failed(&mut self.out, serde_json::to_vec("player does not exist")?)?;
+                     send_or_log_and_report_ise(&mut self.out, serde_json::to_vec("player does not exist")?)?;
                      return Ok(());
                   };
 
@@ -407,9 +408,9 @@ impl Server {
                      for (id, player) in lobby.players.iter_mut() {
                         match player.connection {
                            either::Left(ref mut sender) => {
-                              let _ = log_and_report_ise_if_failed(sender, public_gs_json.clone());
+                              let _ = send_or_log_and_report_ise(sender, public_gs_json.clone());
                               if *id == message.player_id {
-                                 let _ = log_and_report_ise_if_failed(
+                                 let _ = send_or_log_and_report_ise(
                                     sender,
                                     serde_json::to_vec(&PalaceOutMessage::Hand(gs.get_hand(player.turn_number)))?,
                                  );
@@ -419,15 +420,15 @@ impl Server {
                         }
                      }
                   } else {
-                     log_and_report_ise_if_failed(&mut self.out, serde_json::to_vec("illegal")?)?;
+                     send_or_log_and_report_ise(&mut self.out, serde_json::to_vec("illegal")?)?;
                   }
                   Ok(())
                } else {
-                  log_and_report_ise_if_failed(&mut self.out, serde_json::to_vec("game has not started")?)?;
+                  send_or_log_and_report_ise(&mut self.out, serde_json::to_vec("game has not started")?)?;
                   Ok(())
                }
             } else {
-               log_and_report_ise_if_failed(&mut self.out, serde_json::to_vec("lobby does not exist")?)?;
+               send_or_log_and_report_ise(&mut self.out, serde_json::to_vec("lobby does not exist")?)?;
                Ok(())
             }
          }
@@ -437,12 +438,12 @@ impl Server {
                if let Some(ref mut gs) = lobby.game {
                   let result = if let Some(player) = lobby.players.get(&message.player_id) {
                      if player.turn_number != gs.active_player {
-                        log_and_report_ise_if_failed(&mut self.out, serde_json::to_vec("it is not your turn")?)?;
+                        send_or_log_and_report_ise(&mut self.out, serde_json::to_vec("it is not your turn")?)?;
                         return Ok(());
                      }
                      gs.make_play(message.cards)
                   } else {
-                     log_and_report_ise_if_failed(&mut self.out, serde_json::to_vec("player does not exist")?)?;
+                     send_or_log_and_report_ise(&mut self.out, serde_json::to_vec("player does not exist")?)?;
                      return Ok(());
                   };
 
@@ -452,9 +453,9 @@ impl Server {
                      for (id, player) in lobby.players.iter_mut() {
                         match player.connection {
                            either::Left(ref mut sender) => {
-                              let _ = log_and_report_ise_if_failed(sender, public_gs_json.clone());
+                              let _ = send_or_log_and_report_ise(sender, public_gs_json.clone());
                               if *id == message.player_id {
-                                 let _ = log_and_report_ise_if_failed(
+                                 let _ = send_or_log_and_report_ise(
                                     sender,
                                     serde_json::to_vec(&PalaceOutMessage::Hand(gs.get_hand(player.turn_number)))?,
                                  );
@@ -464,16 +465,16 @@ impl Server {
                         }
                      }
                   } else {
-                     log_and_report_ise_if_failed(&mut self.out, serde_json::to_vec("illegal")?)?;
+                     send_or_log_and_report_ise(&mut self.out, serde_json::to_vec("illegal")?)?;
                   }
 
                   Ok(())
                } else {
-                  log_and_report_ise_if_failed(&mut self.out, serde_json::to_vec("game has not started")?)?;
+                  send_or_log_and_report_ise(&mut self.out, serde_json::to_vec("game has not started")?)?;
                   Ok(())
                }
             } else {
-               log_and_report_ise_if_failed(&mut self.out, serde_json::to_vec("lobby does not exist")?)?;
+               send_or_log_and_report_ise(&mut self.out, serde_json::to_vec("lobby does not exist")?)?;
                Ok(())
             }
          }
@@ -481,7 +482,7 @@ impl Server {
    }
 }
 
-fn log_and_report_ise_if_failed(s: &mut Sender, message: Vec<u8>) -> ws::Result<()> {
+fn send_or_log_and_report_ise(s: &mut Sender, message: Vec<u8>) -> ws::Result<()> {
    if let Err(e) = s.send(message) {
       error!("Failed to send a message: {:?}", e);
       s.send(ws::Message::binary("\"InternalServerError\""))
