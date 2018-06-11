@@ -144,6 +144,24 @@ struct MakePlayMessage {
    player_id: PlayerId,
 }
 
+#[derive(Serialize)]
+struct HandResponse<'a> {
+   hand: &'a [game::Card],
+}
+
+#[derive(Serialize)]
+struct GameStartedMessage<'a> {
+   hand: &'a [game::Card],
+   turn_number: u8,
+}
+
+#[derive(Serialize)]
+enum StartGameError {
+   LobbyNotFound,
+   NotLobbyOwner,
+   LessThanTwoPlayers,
+}
+
 #[derive(Deserialize)]
 enum PalaceMessage {
    NewLobby(NewLobbyMessage),
@@ -155,12 +173,25 @@ enum PalaceMessage {
 }
 
 #[derive(Serialize)]
+enum MakePlayError {
+
+}
+
+#[derive(Serialize)]
+enum ChooseFaceupError {
+
+}
+
+#[derive(Serialize)]
 enum PalaceOutMessage<'a> {
    NewLobbyResponse(&'a NewLobbyResponse),
    JoinLobbyResponse(&'a Result<JoinLobbyResponse, JoinLobbyError>),
    LobbyList(&'a [LobbyDisplay<'a>]),
    PublicGameState(&'a game::PublicGameState<'a>),
-   Hand(&'a [game::Card]),
+   ChooseFaceupResponse(&'a Result<HandResponse<'a>, ChooseFaceupError>),
+   MakePlayResponse(&'a Result<HandResponse<'a>, MakePlayError>),
+   StartGameResponse(&'a Result<GameStartedMessage<'a>, StartGameError>),
+   GameStarted(&'a GameStartedMessage<'a>),
 }
 
 struct Server {
@@ -345,14 +376,21 @@ impl Server {
             let mut lobbies = self.lobbies.borrow_mut();
             if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
                if message.player_id != lobby.owner {
-                  send_or_log_and_report_ise(&mut self.out, serde_json::to_vec("must be the owner to start game")?)?;
+                  send_or_log_and_report_ise(
+                     &mut self.out,
+                     serde_json::to_vec(&PalaceOutMessage::StartGameResponse(&Err(
+                        StartGameError::NotLobbyOwner,
+                     )))?,
+                  )?;
                   return Ok(());
                }
 
                if lobby.players.len() < 2 {
                   self
                      .out
-                     .send(serde_json::to_vec("can't start a game with less than 2 players")?)?;
+                     .send(serde_json::to_vec(&PalaceOutMessage::StartGameResponse(&Err(
+                        StartGameError::LessThanTwoPlayers,
+                     )))?)?;
                   return Ok(());
                }
 
@@ -372,7 +410,10 @@ impl Server {
                            Some(ref mut gs) => {
                               let _ = send_or_log_and_report_ise(
                                  sender,
-                                 serde_json::to_vec(&PalaceOutMessage::Hand(gs.get_hand(player.turn_number))).unwrap(),
+                                 serde_json::to_vec(&PalaceOutMessage::GameStarted(&GameStartedMessage {
+                                    hand: gs.get_hand(player.turn_number),
+                                    turn_number: player.turn_number,
+                                 }))?,
                               );
                            }
                            None => unreachable!(),
@@ -383,7 +424,12 @@ impl Server {
                }
                Ok(())
             } else {
-               send_or_log_and_report_ise(&mut self.out, serde_json::to_vec("lobby does not exist")?)?;
+               send_or_log_and_report_ise(
+                  &mut self.out,
+                  serde_json::to_vec(&PalaceOutMessage::StartGameResponse(&Err(
+                     StartGameError::LobbyNotFound,
+                  )))?,
+               )?;
                Ok(())
             }
          }
@@ -412,7 +458,9 @@ impl Server {
                               if *id == message.player_id {
                                  let _ = send_or_log_and_report_ise(
                                     sender,
-                                    serde_json::to_vec(&PalaceOutMessage::Hand(gs.get_hand(player.turn_number)))?,
+                                    serde_json::to_vec(&PalaceOutMessage::ChooseFaceupResponse(&Ok(HandResponse {
+                                       hand: gs.get_hand(player.turn_number),
+                                    })))?,
                                  );
                               }
                            }
@@ -457,7 +505,9 @@ impl Server {
                               if *id == message.player_id {
                                  let _ = send_or_log_and_report_ise(
                                     sender,
-                                    serde_json::to_vec(&PalaceOutMessage::Hand(gs.get_hand(player.turn_number)))?,
+                                    serde_json::to_vec(&PalaceOutMessage::MakePlayResponse(&Ok(HandResponse {
+                                       hand: gs.get_hand(player.turn_number),
+                                    })))?,
                                  );
                               }
                            }
