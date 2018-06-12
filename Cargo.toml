@@ -4,7 +4,6 @@ version = "0.1.0"
 authors = ["Richard McCormack <rmccormack@ebsco.com>"]
 
 [dependencies]
-either = "1"
 log = "0.4"
 rand = { version = "0.5", features = ["i128_support"] }
 serde = "1"

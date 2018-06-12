@@ -1,6 +1,5 @@
 #![feature(vec_remove_item)]
 
-extern crate either;
 #[macro_use]
 extern crate log;
 extern crate rand;
@@ -12,7 +11,6 @@ extern crate ws;
 
 mod game;
 
-use either::Either;
 use game::GameState;
 use rand::Rng;
 use serde::{Deserialize, Deserializer, Serializer};
@@ -84,9 +82,14 @@ struct LobbyDisplay<'a> {
    lobby_id: LobbyId,
 }
 
+enum Connection {
+   Connected(ws::Sender),
+   Disconnected(Instant),
+}
+
 struct Player {
    name: String,
-   connection: Either<Sender, Instant>,
+   connection: Connection,
    turn_number: u8,
 }
 
@@ -280,7 +283,7 @@ impl Handler for Server {
       if let Some((lobby_id, player_id)) = self.connected_lobby_player {
          if let Some(lobby) = lobbies.get_mut(&lobby_id) {
             if let Some(player) = lobby.players.get_mut(&player_id) {
-               player.connection = Either::Right(Instant::now());
+               player.connection = Connection::Disconnected(Instant::now());
             }
          }
       }
@@ -329,7 +332,7 @@ impl Server {
                player_id,
                Player {
                   name: message.player_name,
-                  connection: either::Left(self.out.clone()),
+                  connection: Connection::Connected(self.out.clone()),
                   turn_number: 0,
                },
             );
@@ -391,7 +394,7 @@ impl Server {
                   player_id,
                   Player {
                      name: message.player_name,
-                     connection: Either::Left(self.out.clone()),
+                     connection: Connection::Connected(self.out.clone()),
                      turn_number: 0,
                   },
                );
@@ -458,7 +461,7 @@ impl Server {
                for player in lobby.players.values_mut() {
                   player.turn_number = turn_numbers.next().unwrap();
                   match player.connection {
-                     either::Left(ref mut sender) => {
+                     Connection::Connected(ref mut sender) => {
                         let _ = send_or_log_and_report_ise(sender, public_gs_json.clone());
                         match lobby.game {
                            Some(ref mut gs) => {
@@ -473,7 +476,7 @@ impl Server {
                            None => unreachable!(),
                         }
                      }
-                     either::Right(_) => (),
+                     Connection::Disconnected(_) => (),
                   }
                }
                Ok(())
@@ -517,7 +520,7 @@ impl Server {
                         serde_json::to_vec(&PalaceOutMessage::PublicGameState(&gs.public_state())).unwrap();
                      for (id, player) in lobby.players.iter_mut() {
                         match player.connection {
-                           either::Left(ref mut sender) => {
+                           Connection::Connected(ref mut sender) => {
                               let _ = send_or_log_and_report_ise(sender, public_gs_json.clone());
                               if *id == message.player_id {
                                  let _ = send_or_log_and_report_ise(
@@ -528,7 +531,7 @@ impl Server {
                                  );
                               }
                            }
-                           either::Right(_) => (),
+                           Connection::Disconnected(_) => (),
                         }
                      }
                   } else {
@@ -580,7 +583,7 @@ impl Server {
                         serde_json::to_vec(&PalaceOutMessage::PublicGameState(&gs.public_state())).unwrap();
                      for (id, player) in lobby.players.iter_mut() {
                         match player.connection {
-                           either::Left(ref mut sender) => {
+                           Connection::Connected(ref mut sender) => {
                               let _ = send_or_log_and_report_ise(sender, public_gs_json.clone());
                               if *id == message.player_id {
                                  let _ = send_or_log_and_report_ise(
@@ -591,7 +594,7 @@ impl Server {
                                  );
                               }
                            }
-                           either::Right(_) => (),
+                           Connection::Disconnected(_) => (),
                         }
                      }
                   } else {
