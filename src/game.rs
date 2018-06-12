@@ -367,44 +367,66 @@ pub struct PublicGameState<'a> {
 }
 
 mod test {
+   #[cfg(test)]
+   use super::*;
+
+   #[cfg(test)]
+   impl GameState {
+      fn new_game_skip_setup(num_players: u8) -> GameState {
+         let mut game = GameState::new(num_players);
+         game.cur_phase = GamePhase::Play;
+         game
+      }
+
+      fn play_card(&mut self, card_val: CardValue) -> Result<(), &'static str> {
+         let card = Card {
+            value: card_val,
+            suit: *rand::thread_rng().choose(&SUITS).unwrap(),
+         };
+         self.hands[self.active_player as usize] = vec![card];
+         self.make_play(vec![card].into_boxed_slice())
+      }
+   }
+
+   #[test]
+   fn test_effective_top_card() {
+      let mut game = GameState::new_game_skip_setup(4);
+      assert_eq!(game.effective_top_card(), CardValue::Two);
+      assert!(game.play_card(CardValue::Three).is_ok());
+      assert_eq!(game.effective_top_card(), CardValue::Three);
+      assert!(game.play_card(CardValue::Four).is_ok());
+      assert_eq!(game.effective_top_card(), CardValue::Three);
+   }
+
+   #[test]
+   fn test_normal_play() {
+      let mut game = GameState::new_game_skip_setup(4);
+      assert!(game.play_card(CardValue::Three).is_ok());
+      assert_eq!(game.pile_cards.len(), 1);
+      assert!(game.play_card(CardValue::Four).is_ok());
+      assert_eq!(game.pile_cards.len(), 2);
+      assert!(game.play_card(CardValue::Eight).is_ok());
+      assert_eq!(game.pile_cards.len(), 3);
+      assert_eq!(game.active_player, 3);
+   }
+
    #[test]
    fn test_tens_clear_pile_no_rotate() {
-      use super::*;
-
-      let mut game = GameState::new(4);
-      game.cur_phase = GamePhase::Play; // Skip setup phase
-      let player_one_hand = vec![Card {
-         value: CardValue::Three,
-         suit: CardSuit::Clubs,
-      }];
-      let player_two_hand = vec![Card {
-         value: CardValue::Ten,
-         suit: CardSuit::Clubs,
-      }];
-      game.hands[0] = player_one_hand.clone();
-      game.hands[1] = player_two_hand.clone();
-      assert!(
-         game
-            .make_play(
-               vec![Card {
-                  value: CardValue::Three,
-                  suit: CardSuit::Clubs,
-               }].into_boxed_slice(),
-            )
-            .is_ok()
-      );
+      let mut game = GameState::new_game_skip_setup(4);
+      assert!(game.play_card(CardValue::Three).is_ok());
       assert_eq!(game.pile_cards.len(), 1);
-      assert!(
-         game
-            .make_play(
-               vec![Card {
-                  value: CardValue::Ten,
-                  suit: CardSuit::Clubs,
-               }].into_boxed_slice(),
-            )
-            .is_ok()
-      );
+      assert!(game.play_card(CardValue::Ten).is_ok());
       assert_eq!(game.pile_cards.len(), 0);
       assert_eq!(game.active_player, 1);
+   }
+
+   #[test]
+   fn test_sevens_invert_accepted_values() {
+      let mut game = GameState::new_game_skip_setup(4);
+      assert!(game.play_card(CardValue::Three).is_ok());
+      assert!(game.play_card(CardValue::Seven).is_ok());
+      assert!(game.play_card(CardValue::Eight).is_ok());
+      assert_eq!(game.pile_cards.len(), 0);
+      assert_eq!(game.active_player, 3);
    }
 }
