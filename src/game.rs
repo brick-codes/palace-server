@@ -229,6 +229,7 @@ impl GameState {
          (CardValue::Two, _) => true,
          (CardValue::Four, _) => true,
          (CardValue::Ten, y) => y != CardValue::Seven,
+         (x, CardValue::Seven) => x <= CardValue::Seven,
          (x, y) => x >= y,
       };
 
