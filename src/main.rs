@@ -107,6 +107,8 @@ struct NewLobbyResponse {
 #[derive(Serialize)]
 enum NewLobbyError {
    LessThanTwoMaxPlayers,
+   EmptyLobbyName,
+   EmptyPlayerName,
 }
 
 #[derive(Deserialize)]
@@ -293,6 +295,22 @@ impl Server {
                   &mut self.out,
                   serde_json::to_vec(&PalaceOutMessage::NewLobbyResponse(&Err(
                      NewLobbyError::LessThanTwoMaxPlayers,
+                  )))?,
+               )?;
+            }
+            if message.lobby_name.is_empty() {
+               send_or_log_and_report_ise(
+                  &mut self.out,
+                  serde_json::to_vec(&PalaceOutMessage::NewLobbyResponse(&Err(
+                     NewLobbyError::EmptyLobbyName,
+                  )))?,
+               )?;
+            }
+            if message.player_name.is_empty() {
+               send_or_log_and_report_ise(
+                  &mut self.out,
+                  serde_json::to_vec(&PalaceOutMessage::NewLobbyResponse(&Err(
+                     NewLobbyError::EmptyPlayerName,
                   )))?,
                )?;
             }
