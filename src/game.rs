@@ -430,7 +430,7 @@ mod test {
       assert_eq!(game.pile_cards.len(), 0);
       assert_eq!(game.active_player, 3);
 
-      // Same test but 4s, a slightly trickier case
+      // Same test but 4s only, a slightly trickier case
       assert!(game.play_card(CardValue::Ace).is_ok());
       assert!(game.play_card(CardValue::Four).is_ok());
       assert!(game.play_card(CardValue::Four).is_ok());
@@ -438,6 +438,16 @@ mod test {
       assert!(game.play_card(CardValue::Four).is_ok());
       assert_eq!(game.pile_cards.len(), 0);
       assert_eq!(game.active_player, 3);
+
+      // Same test but put 4s in the middle
+      assert!(game.play_card(CardValue::Three).is_ok());
+      assert!(game.play_card(CardValue::Three).is_ok());
+      assert!(game.play_card(CardValue::Four).is_ok());
+      assert!(game.play_card(CardValue::Three).is_ok());
+      assert!(game.play_card(CardValue::Four).is_ok());
+      assert!(game.play_card(CardValue::Three).is_ok());
+      assert_eq!(game.pile_cards.len(), 0);
+      assert_eq!(game.active_player, 0);
    }
 
    #[test]
