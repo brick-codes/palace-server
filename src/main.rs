@@ -58,7 +58,7 @@ struct Lobby {
 }
 
 impl Lobby {
-   fn display(&self) -> LobbyDisplay {
+   fn display(&self, lobby_id: &LobbyId) -> LobbyDisplay {
       LobbyDisplay {
          cur_players: self.players.len() as u8,
          max_players: self.max_players,
@@ -67,6 +67,7 @@ impl Lobby {
          owner: &self.players[&self.owner].name,
          name: &self.name,
          age: self.creation_time.elapsed().as_secs(),
+         lobby_id: *lobby_id,
       }
    }
 }
@@ -80,6 +81,7 @@ struct LobbyDisplay<'a> {
    owner: &'a str,
    name: &'a str,
    age: u64,
+   lobby_id: LobbyId,
 }
 
 struct Player {
@@ -100,6 +102,11 @@ struct NewLobbyMessage {
 struct NewLobbyResponse {
    player_id: PlayerId,
    lobby_id: LobbyId,
+}
+
+#[derive(Serialize)]
+enum NewLobbyError {
+   LessThanTwoMaxPlayers,
 }
 
 #[derive(Deserialize)]
@@ -150,7 +157,7 @@ struct HandResponse<'a> {
 }
 
 #[derive(Serialize)]
-struct GameStartedMessage<'a> {
+struct GameStartedEvent<'a> {
    hand: &'a [game::Card],
    turn_number: u8,
 }
@@ -163,6 +170,12 @@ enum StartGameError {
 }
 
 #[derive(Deserialize)]
+struct ReconnectMessage {
+   player_id: PlayerId,
+   lobby_id: LobbyId,
+}
+
+#[derive(Deserialize)]
 enum PalaceMessage {
    NewLobby(NewLobbyMessage),
    JoinLobby(JoinLobbyMessage),
@@ -170,6 +183,7 @@ enum PalaceMessage {
    StartGame(StartGameMessage),
    ChooseFaceup(ChooseFaceupMessage),
    MakePlay(MakePlayMessage),
+   Reconnect(ReconnectMessage),
 }
 
 #[derive(Serialize)]
@@ -184,14 +198,14 @@ enum ChooseFaceupError {
 
 #[derive(Serialize)]
 enum PalaceOutMessage<'a> {
-   NewLobbyResponse(&'a NewLobbyResponse),
+   NewLobbyResponse(&'a Result<NewLobbyResponse, NewLobbyError>),
    JoinLobbyResponse(&'a Result<JoinLobbyResponse, JoinLobbyError>),
    LobbyList(&'a [LobbyDisplay<'a>]),
    PublicGameState(&'a game::PublicGameState<'a>),
    ChooseFaceupResponse(&'a Result<HandResponse<'a>, ChooseFaceupError>),
    MakePlayResponse(&'a Result<HandResponse<'a>, MakePlayError>),
-   StartGameResponse(&'a Result<GameStartedMessage<'a>, StartGameError>),
-   GameStarted(&'a GameStartedMessage<'a>),
+   StartGameResponse(&'a Result<(), StartGameError>),
+   GameStarted(&'a GameStartedEvent<'a>),
 }
 
 struct Server {
@@ -224,6 +238,13 @@ impl Handler for Server {
       match msg {
          Message::Text(_) => self.out.close(CloseCode::Unsupported),
          Message::Binary(binary) => {
+            unsafe {
+               println!("DEBUG MESSAGE: {}", String::from_utf8_unchecked(binary.clone()));
+            }
+            let message: Result<PalaceMessage, serde_json::error::Error> = serde_json::from_slice(&binary);
+            if let Err(e) = message {
+               println!("ERROR DECODING MESSAGE: {:?}", e);
+            }
             if let Ok(message) = serde_json::from_slice::<PalaceMessage>(&binary) {
                match self.handle_message(message) {
                   Ok(()) => Ok(()),
@@ -267,6 +288,14 @@ impl Server {
    fn handle_message(&mut self, message: PalaceMessage) -> Result<(), OnMessageError> {
       match message {
          PalaceMessage::NewLobby(message) => {
+            if message.max_players < 2 {
+               send_or_log_and_report_ise(
+                  &mut self.out,
+                  serde_json::to_vec(&PalaceOutMessage::NewLobbyResponse(&Err(
+                     NewLobbyError::LessThanTwoMaxPlayers,
+                  )))?,
+               )?;
+            }
             let mut lobbies = self.lobbies.borrow_mut();
             let lobby_id = LobbyId(rand::random());
             let player_id = PlayerId(rand::random());
@@ -294,10 +323,10 @@ impl Server {
             self.connected_lobby_player = Some((lobby_id, player_id));
             send_or_log_and_report_ise(
                &mut self.out,
-               serde_json::to_vec(&PalaceOutMessage::NewLobbyResponse(&NewLobbyResponse {
+               serde_json::to_vec(&PalaceOutMessage::NewLobbyResponse(&Ok(NewLobbyResponse {
                   player_id,
                   lobby_id,
-               }))?,
+               })))?,
             )?;
             Ok(())
          }
@@ -367,7 +396,7 @@ impl Server {
             send_or_log_and_report_ise(
                &mut self.out,
                serde_json::to_vec(&PalaceOutMessage::LobbyList(
-                  &lobbies.values().map(|x| x.display()).collect::<Vec<_>>(),
+                  &lobbies.iter().map(|(k, v)| v.display(k)).collect::<Vec<_>>(),
                ))?,
             )?;
             Ok(())
@@ -410,7 +439,7 @@ impl Server {
                            Some(ref mut gs) => {
                               let _ = send_or_log_and_report_ise(
                                  sender,
-                                 serde_json::to_vec(&PalaceOutMessage::GameStarted(&GameStartedMessage {
+                                 serde_json::to_vec(&PalaceOutMessage::GameStarted(&GameStartedEvent {
                                     hand: gs.get_hand(player.turn_number),
                                     turn_number: player.turn_number,
                                  }))?,
@@ -527,6 +556,20 @@ impl Server {
                send_or_log_and_report_ise(&mut self.out, serde_json::to_vec("lobby does not exist")?)?;
                Ok(())
             }
+         }
+         PalaceMessage::Reconnect(message) => {
+            /*
+            let mut lobbies = self.lobbies.borrow_mut();
+            if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
+               if let Some(player) = lobbies.get_mut(&message.player_id) {
+                  if let Some(ref gs)
+               } else {
+
+               }
+            } else {
+
+            } */
+            Ok(())
          }
       }
    }
