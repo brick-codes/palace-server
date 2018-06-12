@@ -335,7 +335,7 @@ impl GameState {
    }
 
    fn effective_top_card(&self) -> CardValue {
-      let mut index = self.pile_cards.len() - 1;
+      let mut index = self.pile_cards.len().wrapping_sub(1);
       let mut effective_top_card_value = if let Some(card) = self.pile_cards.get(index) {
          card.value
       } else {
@@ -367,14 +367,44 @@ pub struct PublicGameState<'a> {
 }
 
 mod test {
-
    #[test]
-   fn test_new_game() {
+   fn test_tens_clear_pile_no_rotate() {
       use super::*;
 
-      let new_game = GameState::new(4);
-      let pub_state = new_game.public_state();
-      let serialized = ::serde_json::to_string(&pub_state).unwrap();
-      println!("{}", serialized);
+      let mut game = GameState::new(4);
+      game.cur_phase = GamePhase::Play; // Skip setup phase
+      let player_one_hand = vec![Card {
+         value: CardValue::Three,
+         suit: CardSuit::Clubs,
+      }];
+      let player_two_hand = vec![Card {
+         value: CardValue::Ten,
+         suit: CardSuit::Clubs,
+      }];
+      game.hands[0] = player_one_hand.clone();
+      game.hands[1] = player_two_hand.clone();
+      assert!(
+         game
+            .make_play(
+               vec![Card {
+                  value: CardValue::Three,
+                  suit: CardSuit::Clubs,
+               }].into_boxed_slice(),
+            )
+            .is_ok()
+      );
+      assert_eq!(game.pile_cards.len(), 1);
+      assert!(
+         game
+            .make_play(
+               vec![Card {
+                  value: CardValue::Ten,
+                  suit: CardSuit::Clubs,
+               }].into_boxed_slice(),
+            )
+            .is_ok()
+      );
+      assert_eq!(game.pile_cards.len(), 0);
+      assert_eq!(game.active_player, 1);
    }
 }
