@@ -308,9 +308,7 @@ impl Server {
             if message.lobby_name.is_empty() {
                send_or_log_and_report_ise(
                   &mut self.out,
-                  serde_json::to_vec(&PalaceOutMessage::NewLobbyResponse(&Err(
-                     NewLobbyError::EmptyLobbyName,
-                  )))?,
+                  serde_json::to_vec(&PalaceOutMessage::NewLobbyResponse(&Err(NewLobbyError::EmptyLobbyName)))?,
                )?;
                return Ok(());
             }
@@ -495,12 +493,22 @@ impl Server {
                if let Some(ref mut gs) = lobby.game {
                   let result = if let Some(player) = lobby.players.get(&message.player_id) {
                      if player.turn_number != gs.active_player {
-                        send_or_log_and_report_ise(&mut self.out, serde_json::to_vec(&PalaceOutMessage::ChooseFaceupResponse(&Err(ChooseFaceupError::NotYourTurn)))?)?;
+                        send_or_log_and_report_ise(
+                           &mut self.out,
+                           serde_json::to_vec(&PalaceOutMessage::ChooseFaceupResponse(&Err(
+                              ChooseFaceupError::NotYourTurn,
+                           )))?,
+                        )?;
                         return Ok(());
                      }
                      gs.choose_three_faceup(message.card_one, message.card_two, message.card_three)
                   } else {
-                     send_or_log_and_report_ise(&mut self.out, serde_json::to_vec(&PalaceOutMessage::ChooseFaceupResponse(&Err(ChooseFaceupError::PlayerNotFound)))?)?;
+                     send_or_log_and_report_ise(
+                        &mut self.out,
+                        serde_json::to_vec(&PalaceOutMessage::ChooseFaceupResponse(&Err(
+                           ChooseFaceupError::PlayerNotFound,
+                        )))?,
+                     )?;
                      return Ok(());
                   };
 
@@ -528,11 +536,21 @@ impl Server {
                   }
                   Ok(())
                } else {
-                  send_or_log_and_report_ise(&mut self.out, serde_json::to_vec(&PalaceOutMessage::ChooseFaceupResponse(&Err(ChooseFaceupError::GameNotStarted)))?)?;
+                  send_or_log_and_report_ise(
+                     &mut self.out,
+                     serde_json::to_vec(&PalaceOutMessage::ChooseFaceupResponse(&Err(
+                        ChooseFaceupError::GameNotStarted,
+                     )))?,
+                  )?;
                   Ok(())
                }
             } else {
-               send_or_log_and_report_ise(&mut self.out, serde_json::to_vec(&PalaceOutMessage::ChooseFaceupResponse(&Err(ChooseFaceupError::LobbyNotFound)))?)?;
+               send_or_log_and_report_ise(
+                  &mut self.out,
+                  serde_json::to_vec(&PalaceOutMessage::ChooseFaceupResponse(&Err(
+                     ChooseFaceupError::LobbyNotFound,
+                  )))?,
+               )?;
                Ok(())
             }
          }
@@ -542,12 +560,18 @@ impl Server {
                if let Some(ref mut gs) = lobby.game {
                   let result = if let Some(player) = lobby.players.get(&message.player_id) {
                      if player.turn_number != gs.active_player {
-                        send_or_log_and_report_ise(&mut self.out, serde_json::to_vec(&PalaceOutMessage::MakePlayResponse(&Err(MakePlayError::NotYourTurn)))?)?;
+                        send_or_log_and_report_ise(
+                           &mut self.out,
+                           serde_json::to_vec(&PalaceOutMessage::MakePlayResponse(&Err(MakePlayError::NotYourTurn)))?,
+                        )?;
                         return Ok(());
                      }
                      gs.make_play(message.cards)
                   } else {
-                     send_or_log_and_report_ise(&mut self.out, serde_json::to_vec(&PalaceOutMessage::MakePlayResponse(&Err(MakePlayError::PlayerNotFound)))?)?;
+                     send_or_log_and_report_ise(
+                        &mut self.out,
+                        serde_json::to_vec(&PalaceOutMessage::MakePlayResponse(&Err(MakePlayError::PlayerNotFound)))?,
+                     )?;
                      return Ok(());
                   };
 
@@ -576,11 +600,17 @@ impl Server {
 
                   Ok(())
                } else {
-                  send_or_log_and_report_ise(&mut self.out, serde_json::to_vec(&PalaceOutMessage::MakePlayResponse(&Err(MakePlayError::GameNotStarted)))?)?;
+                  send_or_log_and_report_ise(
+                     &mut self.out,
+                     serde_json::to_vec(&PalaceOutMessage::MakePlayResponse(&Err(MakePlayError::GameNotStarted)))?,
+                  )?;
                   Ok(())
                }
             } else {
-               send_or_log_and_report_ise(&mut self.out, serde_json::to_vec(&PalaceOutMessage::MakePlayResponse(&Err(MakePlayError::LobbyNotFound)))?)?;
+               send_or_log_and_report_ise(
+                  &mut self.out,
+                  serde_json::to_vec(&PalaceOutMessage::MakePlayResponse(&Err(MakePlayError::LobbyNotFound)))?,
+               )?;
                Ok(())
             }
          }
