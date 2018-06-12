@@ -297,6 +297,7 @@ impl Server {
                      NewLobbyError::LessThanTwoMaxPlayers,
                   )))?,
                )?;
+               return Ok(());
             }
             if message.lobby_name.is_empty() {
                send_or_log_and_report_ise(
@@ -305,6 +306,7 @@ impl Server {
                      NewLobbyError::EmptyLobbyName,
                   )))?,
                )?;
+               return Ok(());
             }
             if message.player_name.is_empty() {
                send_or_log_and_report_ise(
@@ -313,6 +315,7 @@ impl Server {
                      NewLobbyError::EmptyPlayerName,
                   )))?,
                )?;
+               return Ok(());
             }
             let mut lobbies = self.lobbies.borrow_mut();
             let lobby_id = LobbyId(rand::random());
