@@ -217,7 +217,8 @@ impl GameState {
       if cards
          .windows(2)
          .filter(|cards| cards[0].value != cards[1].value)
-         .count() != 0
+         .next()
+         .is_some()
       {
          return Err("Can only play multiple cards if each card has the same value");
       }
