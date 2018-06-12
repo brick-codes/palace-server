@@ -654,14 +654,18 @@ impl Server {
                } else {
                   send_or_log_and_report_ise(
                      &mut self.out,
-                     serde_json::to_vec(&PalaceOutMessage::ReconnectResponse(&Err(ReconnectError::PlayerNotFound)))?,
+                     serde_json::to_vec(&PalaceOutMessage::ReconnectResponse(&Err(
+                        ReconnectError::PlayerNotFound,
+                     )))?,
                   )?;
                   Ok(())
                }
             } else {
                send_or_log_and_report_ise(
                   &mut self.out,
-                  serde_json::to_vec(&PalaceOutMessage::ReconnectResponse(&Err(ReconnectError::LobbyNotFound)))?,
+                  serde_json::to_vec(&PalaceOutMessage::ReconnectResponse(&Err(
+                     ReconnectError::LobbyNotFound,
+                  )))?,
                )?;
                Ok(())
             }
