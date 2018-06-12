@@ -421,6 +421,25 @@ mod test {
    }
 
    #[test]
+   fn test_four_in_a_row_clears_no_rotate() {
+      let mut game = GameState::new_game_skip_setup(4);
+      assert!(game.play_card(CardValue::Three).is_ok());
+      assert!(game.play_card(CardValue::Three).is_ok());
+      assert!(game.play_card(CardValue::Three).is_ok());
+      assert!(game.play_card(CardValue::Three).is_ok());
+      assert_eq!(game.pile_cards.len(), 0);
+      assert_eq!(game.active_player, 3);
+      // Same test but 4s, a slightly trickier case
+      assert!(game.play_card(CardValue::Ace).is_ok());
+      assert!(game.play_card(CardValue::Four).is_ok());
+      assert!(game.play_card(CardValue::Four).is_ok());
+      assert!(game.play_card(CardValue::Four).is_ok());
+      assert!(game.play_card(CardValue::Four).is_ok());
+      assert_eq!(game.pile_cards.len(), 0);
+      assert_eq!(game.active_player, 3);
+   }
+
+   #[test]
    fn test_sevens_invert_accepted_values() {
       let mut game = GameState::new_game_skip_setup(4);
       assert!(game.play_card(CardValue::Three).is_ok());
