@@ -315,6 +315,7 @@ impl Server {
                )?;
                return Ok(());
             }
+
             if message.lobby_name.is_empty() {
                send_or_log_and_report_ise(
                   &mut self.out,
@@ -322,6 +323,7 @@ impl Server {
                )?;
                return Ok(());
             }
+
             if message.player_name.is_empty() {
                send_or_log_and_report_ise(
                   &mut self.out,
@@ -331,6 +333,7 @@ impl Server {
                )?;
                return Ok(());
             }
+
             let mut lobbies = self.lobbies.borrow_mut();
             let lobby_id = LobbyId(rand::random());
             let player_id = PlayerId(rand::random());
