@@ -131,7 +131,8 @@ enum JoinLobbyError {
    LobbyNotFound,
    LobbyFull,
    BadPassword,
-   GameStarted,
+   GameInProgress,
+   EmptyPlayerName,
 }
 
 #[derive(Deserialize)]
@@ -378,13 +379,22 @@ impl Server {
             // TODO (APPLIES TO ALL)
             // PUT THIS IN A FN THAT RETURNS A RESULT<JoinLobbyResponse, JoinLobbyErr)
             // DO THE JSON SERIALIZATION / MESSAGE SENDING AT THE TOP LEVEL IN ONE PLACE
+            if message.player_name.is_empty() {
+               send_or_log_and_report_ise(
+                  &mut self.out,
+                  serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(&Err(
+                     JoinLobbyError::EmptyPlayerName,
+                  )))?,
+               )?;
+               return Ok(());
+            }
             let mut lobbies = self.lobbies.borrow_mut();
             let mut lobby_opt = lobbies.get_mut(&message.lobby_id);
             if let Some(lobby) = lobby_opt {
                if lobby.game.is_some() {
                   send_or_log_and_report_ise(
                      &mut self.out,
-                     serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(&Err(JoinLobbyError::GameStarted)))?,
+                     serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(&Err(JoinLobbyError::GameInProgress)))?,
                   )?;
                   return Ok(());
                }
@@ -480,6 +490,15 @@ impl Server {
                      .out
                      .send(serde_json::to_vec(&PalaceOutMessage::StartGameResponse(&Err(
                         StartGameError::LessThanTwoPlayers,
+                     )))?)?;
+                  return Ok(());
+               }
+
+               if lobby.game.is_some() {
+                  self
+                     .out
+                     .send(serde_json::to_vec(&PalaceOutMessage::StartGameResponse(&Err(
+                        StartGameError::GameInProgress,
                      )))?)?;
                   return Ok(());
                }
