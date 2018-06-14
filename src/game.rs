@@ -335,19 +335,17 @@ impl GameState {
    }
 
    fn effective_top_card(&self) -> CardValue {
-      let mut index = self.pile_cards.len().wrapping_sub(1);
-      let mut effective_top_card_value = if let Some(card) = self.pile_cards.get(index) {
-         card.value
-      } else {
-         CardValue::Two
-      };
+      if self.pile_cards.len() == 0 {
+         return CardValue::Two;
+      }
+      let mut index = self.pile_cards.len() - 1;
+      let mut effective_top_card_value = self.pile_cards[index].value;
       while effective_top_card_value == CardValue::Four {
+         if index == 0 {
+            return CardValue::Two
+         }
          index -= 1;
-         effective_top_card_value = if let Some(card) = self.pile_cards.get(index) {
-            card.value
-         } else {
-            CardValue::Two
-         };
+         effective_top_card_value = self.pile_cards[index].value;
       }
       effective_top_card_value
    }
