@@ -214,6 +214,11 @@ enum ReconnectError {
 }
 
 #[derive(Serialize)]
+struct PlayerJoinEvent {
+   num_players: u8
+}
+
+#[derive(Serialize)]
 enum PalaceOutMessage<'a> {
    NewLobbyResponse(&'a Result<NewLobbyResponse, NewLobbyError>),
    JoinLobbyResponse(&'a Result<JoinLobbyResponse, JoinLobbyError>),
@@ -224,6 +229,7 @@ enum PalaceOutMessage<'a> {
    ReconnectResponse(&'a Result<(), ReconnectError>),
    PublicGameStateEvent(&'a game::PublicGameState<'a>),
    GameStartedEvent(&'a GameStartedEvent<'a>),
+   PlayerJoinEvent(&'a PlayerJoinEvent),
 }
 
 struct Server {
@@ -415,6 +421,23 @@ impl Server {
                      player_id,
                   })))?,
                )?;
+               let new_num_players = lobby.players.len() as u8;
+               for (id, player) in &mut lobby.players {
+                  if *id == player_id {
+                     continue;
+                  }
+                  match player.connection {
+                     Connection::Connected(ref mut sender) => {
+                              let _ = send_or_log_and_report_ise(
+                                 sender,
+                                 serde_json::to_vec(&PalaceOutMessage::PlayerJoinEvent(&PlayerJoinEvent {
+                                    num_players: new_num_players,
+                                 }))?,
+                              );
+                     }
+                     Connection::Disconnected(_) => (),
+                  }
+               }
                Ok(())
             } else {
                send_or_log_and_report_ise(
