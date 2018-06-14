@@ -173,6 +173,7 @@ enum StartGameError {
    LobbyNotFound,
    NotLobbyOwner,
    LessThanTwoPlayers,
+   GameInProgress,
 }
 
 #[derive(Deserialize)]
@@ -394,7 +395,9 @@ impl Server {
                if lobby.game.is_some() {
                   send_or_log_and_report_ise(
                      &mut self.out,
-                     serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(&Err(JoinLobbyError::GameInProgress)))?,
+                     serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(&Err(
+                        JoinLobbyError::GameInProgress,
+                     )))?,
                   )?;
                   return Ok(());
                }
