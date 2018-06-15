@@ -730,6 +730,10 @@ fn send_or_log_and_report_ise(s: &mut Sender, message: Vec<u8>) -> ws::Result<()
 }
 
 fn main() {
+   run_server("0.0.0.0:3012")
+}
+
+fn run_server(address: &'static str) {
    // @Performance this could be a concurrent hashmap
    let lobbies: Arc<RwLock<HashMap<LobbyId, Lobby>>> = Arc::new(RwLock::new(HashMap::new()));
 
@@ -753,7 +757,7 @@ fn main() {
       });
    }
 
-   ws::listen("0.0.0.0:3012", |out| Server {
+   ws::listen(address, |out| Server {
       out,
       lobbies: lobbies.clone(),
       connected_lobby_player: None,
@@ -864,7 +868,7 @@ mod test {
          let (tx2, rx2) = mpsc::channel();
          let to_send_messages = Arc::new(Mutex::new(rx2));
          std::thread::spawn(move || {
-            ws::connect("ws://127.0.0.1:3012", |out| TestClientInner {
+            ws::connect("ws://127.0.0.1:3013", |out| TestClientInner {
                out,
                recvd_messages: tx.clone(),
                to_send_messages: to_send_messages.clone(),
@@ -899,10 +903,8 @@ mod test {
 
    #[test]
    fn test_lobbies_clean_up() {
-      // TODO: we should not call main, but have main and test call a spawn fn
-      // that lets address be customizable so we can spawn a localhost only server
       std::thread::spawn(move || {
-         main();
+         run_server("127.0.0.1:3013");
       });
 
       // Wait for server to be ready
