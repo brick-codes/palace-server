@@ -214,10 +214,7 @@ impl GameState {
          return Err("Have to play at least one card");
       }
 
-      if cards
-         .windows(2)
-         .any(|cards| cards[0].value != cards[1].value)
-      {
+      if cards.windows(2).any(|cards| cards[0].value != cards[1].value) {
          return Err("Can only play multiple cards if each card has the same value");
       }
 

@@ -14,9 +14,8 @@ mod game;
 use game::GameState;
 use rand::Rng;
 use serde::{Deserialize, Deserializer, Serializer};
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use ws::{CloseCode, Handler, Handshake, Message, Sender};
 
@@ -224,7 +223,7 @@ struct PlayerJoinEvent {
 enum PalaceOutMessage<'a> {
    NewLobbyResponse(&'a Result<NewLobbyResponse, NewLobbyError>),
    JoinLobbyResponse(&'a Result<JoinLobbyResponse, JoinLobbyError>),
-   LobbyListResponse(&'a [LobbyDisplay<'a>]),
+   ListLobbiesResponse(&'a [LobbyDisplay<'a>]),
    StartGameResponse(&'a Result<(), StartGameError>),
    ChooseFaceupResponse(&'a Result<HandResponse<'a>, ChooseFaceupError>),
    MakePlayResponse(&'a Result<HandResponse<'a>, MakePlayError>),
@@ -236,7 +235,7 @@ enum PalaceOutMessage<'a> {
 
 struct Server {
    out: Sender,
-   lobbies: Rc<RefCell<HashMap<LobbyId, Lobby>>>,
+   lobbies: Arc<RwLock<HashMap<LobbyId, Lobby>>>,
    // TODO: investigate a global hashmap of Sender(id?) -> (LobbyId, PlayerId) for this instead of storing this per socket
    connected_lobby_player: Option<(LobbyId, PlayerId)>,
 }
@@ -294,7 +293,7 @@ impl Handler for Server {
 
    fn on_close(&mut self, _code: CloseCode, _reason: &str) {
       println!("closed");
-      let mut lobbies = self.lobbies.borrow_mut();
+      let mut lobbies = self.lobbies.write().unwrap();
       if let Some((lobby_id, player_id)) = self.connected_lobby_player {
          if let Some(lobby) = lobbies.get_mut(&lobby_id) {
             if let Some(player) = lobby.players.get_mut(&player_id) {
@@ -342,7 +341,7 @@ impl Server {
                return Ok(());
             }
 
-            let mut lobbies = self.lobbies.borrow_mut();
+            let mut lobbies = self.lobbies.write().unwrap();
             let lobby_id = LobbyId(rand::random());
             let player_id = PlayerId(rand::random());
             let mut players = HashMap::new();
@@ -389,7 +388,7 @@ impl Server {
                )?;
                return Ok(());
             }
-            let mut lobbies = self.lobbies.borrow_mut();
+            let mut lobbies = self.lobbies.write().unwrap();
             let mut lobby_opt = lobbies.get_mut(&message.lobby_id);
             if let Some(lobby) = lobby_opt {
                if lobby.game.is_some() {
@@ -464,20 +463,29 @@ impl Server {
          }
          PalaceMessage::ListLobbies => {
             println!("got lobby message");
-            let mut lobbies = self.lobbies.borrow_mut();
+            let lobbies = self.lobbies.read().unwrap();
             // @Performance we should be able to serialize with Serializer::collect_seq
             // and avoid collecting into a vector
             send_or_log_and_report_ise(
                &mut self.out,
-               serde_json::to_vec(&PalaceOutMessage::LobbyListResponse(
+               serde_json::to_vec(&PalaceOutMessage::ListLobbiesResponse(
                   &lobbies.iter().map(|(k, v)| v.display(k)).collect::<Vec<_>>(),
                ))?,
             )?;
             Ok(())
          }
          PalaceMessage::StartGame(message) => {
-            let mut lobbies = self.lobbies.borrow_mut();
+            let mut lobbies = self.lobbies.write().unwrap();
             if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
+               if lobby.game.is_some() {
+                  self
+                     .out
+                     .send(serde_json::to_vec(&PalaceOutMessage::StartGameResponse(&Err(
+                        StartGameError::GameInProgress,
+                     )))?)?;
+                  return Ok(());
+               }
+
                if message.player_id != lobby.owner {
                   send_or_log_and_report_ise(
                      &mut self.out,
@@ -493,15 +501,6 @@ impl Server {
                      .out
                      .send(serde_json::to_vec(&PalaceOutMessage::StartGameResponse(&Err(
                         StartGameError::LessThanTwoPlayers,
-                     )))?)?;
-                  return Ok(());
-               }
-
-               if lobby.game.is_some() {
-                  self
-                     .out
-                     .send(serde_json::to_vec(&PalaceOutMessage::StartGameResponse(&Err(
-                        StartGameError::GameInProgress,
                      )))?)?;
                   return Ok(());
                }
@@ -545,7 +544,7 @@ impl Server {
             }
          }
          PalaceMessage::ChooseFaceup(message) => {
-            let mut lobbies = self.lobbies.borrow_mut();
+            let mut lobbies = self.lobbies.write().unwrap();
             if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
                if let Some(ref mut gs) = lobby.game {
                   let result = if let Some(player) = lobby.players.get(&message.player_id) {
@@ -612,7 +611,7 @@ impl Server {
             }
          }
          PalaceMessage::MakePlay(message) => {
-            let mut lobbies = self.lobbies.borrow_mut();
+            let mut lobbies = self.lobbies.write().unwrap();
             if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
                if let Some(ref mut gs) = lobby.game {
                   let result = if let Some(player) = lobby.players.get(&message.player_id) {
@@ -672,7 +671,7 @@ impl Server {
             }
          }
          PalaceMessage::Reconnect(message) => {
-            let mut lobbies = self.lobbies.borrow_mut();
+            let mut lobbies = self.lobbies.write().unwrap();
             if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
                if let Some(player) = lobby.players.get_mut(&message.player_id) {
                   player.connection = Connection::Connected(self.out.clone());
@@ -727,11 +726,219 @@ fn send_or_log_and_report_ise(s: &mut Sender, message: Vec<u8>) -> ws::Result<()
 }
 
 fn main() {
-   // @Performance we could make a *mut pointer w/ unsafe
-   let lobbies = Rc::new(RefCell::new(HashMap::new()));
+   // @Performance this could be a concurrent hashmap
+   let lobbies: Arc<RwLock<HashMap<LobbyId, Lobby>>> = Arc::new(RwLock::new(HashMap::new()));
+
+   // Spawn thread to clean up empty lobbies
+   {
+      let thread_lobbies = lobbies.clone();
+      std::thread::spawn(move || loop {
+         std::thread::sleep(std::time::Duration::from_secs(30));
+         let mut lobbies = thread_lobbies.write().unwrap();
+         lobbies.retain(|_, lobby| {
+            for player in lobby.players.values() {
+               match player.connection {
+                  Connection::Connected(_) => {
+                     return true;
+                  }
+                  Connection::Disconnected(_) => (),
+               }
+            }
+            false
+         });
+      });
+   }
+
    ws::listen("0.0.0.0:3012", |out| Server {
       out,
       lobbies: lobbies.clone(),
       connected_lobby_player: None,
    }).unwrap()
+}
+
+mod test {
+   #[cfg(test)]
+   use super::*;
+
+   #[cfg(test)]
+   use std::sync::{mpsc, Mutex};
+
+   #[cfg(test)]
+   #[derive(Deserialize)]
+   struct TestLobbyDisplay {
+      cur_players: u8,
+      max_players: u8,
+      started: bool,
+      has_password: bool,
+      owner: String,
+      name: String,
+      age: u64,
+      lobby_id: String,
+   }
+
+   #[cfg(test)]
+   #[derive(Deserialize)]
+   struct TestNewLobbyResponse {
+      player_id: PlayerId,
+      lobby_id: LobbyId,
+   }
+
+   #[cfg(test)]
+   #[derive(Deserialize)]
+   enum TestNewLobbyError {
+      LessThanTwoMaxPlayers,
+      EmptyLobbyName,
+      EmptyPlayerName,
+   }
+
+   #[cfg(test)]
+   #[derive(Deserialize)]
+   enum TestInMessage {
+      ListLobbiesResponse(Box<[TestLobbyDisplay]>),
+      NewLobbyResponse(Result<TestNewLobbyResponse, TestNewLobbyError>),
+   }
+
+   #[cfg(test)]
+   #[derive(Serialize)]
+   struct TestNewLobbyMessage {
+      max_players: u8,
+      password: String,
+      lobby_name: String,
+      player_name: String,
+   }
+
+   #[cfg(test)]
+   #[derive(Serialize)]
+   enum TestOutMessage {
+      NewLobby(TestNewLobbyMessage),
+      ListLobbies,
+   }
+
+   #[cfg(test)]
+   struct TestClientInner {
+      out: Sender,
+      recvd_messages: mpsc::Sender<TestInMessage>,
+      to_send_messages: Arc<Mutex<mpsc::Receiver<Vec<u8>>>>,
+   }
+
+   #[cfg(test)]
+   impl Handler for TestClientInner {
+      fn on_open(&mut self, _: Handshake) -> ws::Result<()> {
+         self.out.timeout(100, ws::util::Token(1))
+      }
+
+      fn on_timeout(&mut self, event: ws::util::Token) -> ws::Result<()> {
+         if event == ws::util::Token(1) {
+            if let Ok(bytes) = self.to_send_messages.lock().unwrap().try_recv() {
+               self.out.send(bytes).unwrap();
+            }
+            self.out.timeout(100, ws::util::Token(1))
+         } else {
+            Ok(())
+         }
+      }
+
+      fn on_message(&mut self, msg: Message) -> ws::Result<()> {
+         self
+            .recvd_messages
+            .send(serde_json::from_slice(&msg.into_data()).unwrap())
+            .unwrap();
+         Ok(())
+      }
+   }
+
+   #[cfg(test)]
+   struct TestClient {
+      recvd_messages: mpsc::Receiver<TestInMessage>,
+      to_send_messages: mpsc::Sender<Vec<u8>>,
+   }
+
+   #[cfg(test)]
+   impl TestClient {
+      fn new() -> TestClient {
+         let (tx, rx) = mpsc::channel();
+         let (tx2, rx2) = mpsc::channel();
+         let to_send_messages = Arc::new(Mutex::new(rx2));
+         std::thread::spawn(move || {
+            ws::connect("ws://127.0.0.1:3012", |out| TestClientInner {
+               out,
+               recvd_messages: tx.clone(),
+               to_send_messages: to_send_messages.clone(),
+            }).unwrap();
+         });
+         TestClient {
+            recvd_messages: rx,
+            to_send_messages: tx2,
+         }
+      }
+
+      fn send(&mut self, message: TestOutMessage) {
+         self
+            .to_send_messages
+            .send(serde_json::to_vec(&message).unwrap())
+            .unwrap();
+      }
+
+      fn get(&mut self) -> TestInMessage {
+         self.recvd_messages.recv().unwrap()
+      }
+
+      fn disconnect(&mut self) {
+         self
+            .to_send_messages
+            .send(Vec::from(
+               "This message will be unrecognized, causing the connection to end",
+            ))
+            .unwrap();
+      }
+   }
+
+   #[test]
+   fn test_lobbies_clean_up() {
+      // TODO: we should not call main, but have main and test call a spawn fn
+      // that lets address be customizable so we can spawn a localhost only server
+      std::thread::spawn(move || {
+         main();
+      });
+
+      // Wait for server to be ready
+      // TODO: could do this better with a retry loop or something
+      std::thread::sleep(std::time::Duration::from_secs(5));
+
+      // Create a lobby
+      {
+         let mut tc = TestClient::new();
+         tc.send(TestOutMessage::NewLobby(TestNewLobbyMessage {
+            player_name: "TestClient".into(),
+            lobby_name: "TestLobby".into(),
+            password: "".into(),
+            max_players: 4,
+         }));
+         let nlr = tc.get();
+         match nlr {
+            TestInMessage::NewLobbyResponse(r) => assert!(r.is_ok()),
+            _ => assert!(false),
+         }
+         tc.disconnect();
+      }
+
+      std::thread::sleep(std::time::Duration::from_secs(30));
+
+      // Ensure lobby is cleaned up
+      {
+         let mut tc = TestClient::new();
+         tc.send(TestOutMessage::ListLobbies);
+         let llr = tc.get();
+         match llr {
+            TestInMessage::ListLobbiesResponse(r) => {
+               assert!(r.is_empty());
+            }
+            _ => assert!(false),
+         }
+         tc.disconnect(); // TEMP see below
+      }
+
+      // Allow cleanup TEMP once we change prinln to log we won't need this
+      std::thread::sleep(std::time::Duration::from_secs(5))
+   }
 }
