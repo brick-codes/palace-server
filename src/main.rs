@@ -259,40 +259,45 @@ impl From<serde_json::error::Error> for OnMessageError {
 
 impl Handler for Server {
    fn on_message(&mut self, msg: Message) -> ws::Result<()> {
-      println!("got message");
       match msg {
-         Message::Text(_) => self.out.close(CloseCode::Unsupported),
+         Message::Text(_) => {
+            debug!("Received text; closing connection");
+            self.out.close(CloseCode::Unsupported)
+         }
          Message::Binary(binary) => {
-            unsafe {
-               println!("DEBUG MESSAGE: {}", String::from_utf8_unchecked(binary.clone()));
-            }
-            let message: Result<PalaceMessage, serde_json::error::Error> = serde_json::from_slice(&binary);
-            if let Err(e) = message {
-               println!("ERROR DECODING MESSAGE: {:?}", e);
-            }
-            if let Ok(message) = serde_json::from_slice::<PalaceMessage>(&binary) {
-               match self.handle_message(message) {
-                  Ok(()) => Ok(()),
-                  // We don't log an error here because that is done
-                  // in `send_or_log_and_report_ise`
-                  // an error here would just be an error sending
-                  // ISE which we can't handle sanely
-                  Err(OnMessageError::WebsocketError(e)) => Err(e),
-                  Err(OnMessageError::SerdeError(e)) => {
-                     error!("Failed to serialize a message: {:?}", e);
-                     self.out.send(ws::Message::binary("\"InternalServerError\""))
+            debug!(
+               "Received bytes as string: {}",
+               String::from_utf8(binary.clone()).unwrap_or_else(|_| "[invalid utf-8]".into())
+            );
+            match serde_json::from_slice::<PalaceMessage>(&binary) {
+               Ok(message) => {
+                  match self.handle_message(message) {
+                     Ok(()) => Ok(()),
+                     // We don't log an error here because that is done
+                     // in `send_or_log_and_report_ise`
+                     // an error here would just be an error sending
+                     // ISE which we can't handle sanely
+                     Err(OnMessageError::WebsocketError(e)) => Err(e),
+                     Err(OnMessageError::SerdeError(e)) => {
+                        error!("Failed to serialize a message: {:?}", e);
+                        self.out.send(ws::Message::binary("\"InternalServerError\""))
+                     }
                   }
                }
-            } else {
-               println!("unknown message");
-               self.out.close(CloseCode::Invalid)
+               Err(e) => {
+                  debug!(
+                     "Received a binary message but could not decode it into an object; Error: {:?}",
+                     e
+                  );
+                  self.out.close(CloseCode::Invalid)
+               }
             }
          }
       }
    }
 
    fn on_close(&mut self, _code: CloseCode, _reason: &str) {
-      println!("closed");
+      debug!("A connection closed");
       let mut lobbies = self.lobbies.write().unwrap();
       if let Some((lobby_id, player_id)) = self.connected_lobby_player {
          if let Some(lobby) = lobbies.get_mut(&lobby_id) {
@@ -304,7 +309,7 @@ impl Handler for Server {
    }
 
    fn on_open(&mut self, _: Handshake) -> ws::Result<()> {
-      println!("connected");
+      debug!("A connection opened");
       Ok(())
    }
 }
@@ -462,7 +467,6 @@ impl Server {
             }
          }
          PalaceMessage::ListLobbies => {
-            println!("got lobby message");
             let lobbies = self.lobbies.read().unwrap();
             // @Performance we should be able to serialize with Serializer::collect_seq
             // and avoid collecting into a vector
@@ -938,7 +942,7 @@ mod test {
          tc.disconnect(); // TEMP see below
       }
 
-      // Allow cleanup TEMP once we change prinln to log we won't need this
+      // TEMP why do we need this?? test passes but annoying error after the test run
       std::thread::sleep(std::time::Duration::from_secs(5))
    }
 }
