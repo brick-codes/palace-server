@@ -216,9 +216,7 @@ impl GameState {
 
       if cards
          .windows(2)
-         .filter(|cards| cards[0].value != cards[1].value)
-         .next()
-         .is_some()
+         .any(|cards| cards[0].value != cards[1].value)
       {
          return Err("Can only play multiple cards if each card has the same value");
       }
@@ -335,7 +333,7 @@ impl GameState {
    }
 
    fn effective_top_card(&self) -> CardValue {
-      if self.pile_cards.len() == 0 {
+      if self.pile_cards.is_empty() {
          return CardValue::Two;
       }
       let mut index = self.pile_cards.len() - 1;
