@@ -517,18 +517,13 @@ impl Server {
                   player.turn_number = turn_numbers.next().unwrap();
                   match player.connection {
                      Connection::Connected(ref mut sender) => {
-                        match lobby.game {
-                           Some(ref mut gs) => {
-                              let _ = send_or_log_and_report_ise(
-                                 sender,
-                                 serde_json::to_vec(&PalaceOutMessage::GameStartedEvent(&GameStartedEvent {
-                                    hand: gs.get_hand(player.turn_number),
-                                    turn_number: player.turn_number,
-                                 }))?,
-                              );
-                           }
-                           None => unreachable!(),
-                        }
+                        let _ = send_or_log_and_report_ise(
+                              sender,
+                              serde_json::to_vec(&PalaceOutMessage::GameStartedEvent(&GameStartedEvent {
+                              hand: lobby.game.as_mut().unwrap().get_hand(player.turn_number),
+                              turn_number: player.turn_number,
+                              }))?,
+                        );
                         let _ = send_or_log_and_report_ise(sender, public_gs_json.clone());
                      }
                      Connection::Disconnected(_) => (),
