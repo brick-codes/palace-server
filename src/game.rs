@@ -342,7 +342,7 @@ impl GameState {
       let mut effective_top_card_value = self.pile_cards[index].value;
       while effective_top_card_value == CardValue::Four {
          if index == 0 {
-            return CardValue::Two
+            return CardValue::Two;
          }
          index -= 1;
          effective_top_card_value = self.pile_cards[index].value;

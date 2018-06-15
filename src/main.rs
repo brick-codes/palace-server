@@ -217,7 +217,7 @@ enum ReconnectError {
 
 #[derive(Serialize)]
 struct PlayerJoinEvent {
-   num_players: u8
+   num_players: u8,
 }
 
 #[derive(Serialize)]
@@ -441,12 +441,12 @@ impl Server {
                   }
                   match player.connection {
                      Connection::Connected(ref mut sender) => {
-                              let _ = send_or_log_and_report_ise(
-                                 sender,
-                                 serde_json::to_vec(&PalaceOutMessage::PlayerJoinEvent(&PlayerJoinEvent {
-                                    num_players: new_num_players,
-                                 }))?,
-                              );
+                        let _ = send_or_log_and_report_ise(
+                           sender,
+                           serde_json::to_vec(&PalaceOutMessage::PlayerJoinEvent(&PlayerJoinEvent {
+                              num_players: new_num_players,
+                           }))?,
+                        );
                      }
                      Connection::Disconnected(_) => (),
                   }
@@ -518,11 +518,11 @@ impl Server {
                   match player.connection {
                      Connection::Connected(ref mut sender) => {
                         let _ = send_or_log_and_report_ise(
-                              sender,
-                              serde_json::to_vec(&PalaceOutMessage::GameStartedEvent(&GameStartedEvent {
+                           sender,
+                           serde_json::to_vec(&PalaceOutMessage::GameStartedEvent(&GameStartedEvent {
                               hand: lobby.game.as_mut().unwrap().get_hand(player.turn_number),
                               turn_number: player.turn_number,
-                              }))?,
+                           }))?,
                         );
                         let _ = send_or_log_and_report_ise(sender, public_gs_json.clone());
                      }
