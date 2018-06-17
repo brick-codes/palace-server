@@ -51,7 +51,7 @@ pub struct Card {
    suit: CardSuit,
 }
 
-#[derive(Copy, Clone, Debug, Serialize, PartialEq)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub enum GamePhase {
    Setup,
    Play,

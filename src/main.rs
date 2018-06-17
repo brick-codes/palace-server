@@ -1,5 +1,6 @@
 #![feature(vec_remove_item)]
 
+extern crate pretty_env_logger;
 #[macro_use]
 extern crate log;
 extern crate rand;
@@ -9,6 +10,7 @@ extern crate serde;
 extern crate serde_json;
 extern crate ws;
 
+mod ai;
 mod game;
 
 use game::GameState;
@@ -572,28 +574,34 @@ impl Server {
                      return Ok(());
                   };
 
-                  if result.is_ok() {
-                     let public_gs_json =
-                        serde_json::to_vec(&PalaceOutMessage::PublicGameStateEvent(&gs.public_state())).unwrap();
-                     for (id, player) in &mut lobby.players {
-                        match player.connection {
-                           Connection::Connected(ref mut sender) => {
-                              let _ = send_or_log_and_report_ise(sender, public_gs_json.clone());
-                              if *id == message.player_id {
-                                 let _ = send_or_log_and_report_ise(
-                                    sender,
-                                    serde_json::to_vec(&PalaceOutMessage::ChooseFaceupResponse(&Ok(HandResponse {
-                                       hand: gs.get_hand(player.turn_number),
-                                    })))?,
-                                 );
+                  match result {
+                     Ok(()) => {
+                        let public_gs_json =
+                           serde_json::to_vec(&PalaceOutMessage::PublicGameStateEvent(&gs.public_state())).unwrap();
+                        for (id, player) in &mut lobby.players {
+                           match player.connection {
+                              Connection::Connected(ref mut sender) => {
+                                 if *id == message.player_id {
+                                    let _ = send_or_log_and_report_ise(
+                                       sender,
+                                       serde_json::to_vec(&PalaceOutMessage::ChooseFaceupResponse(&Ok(
+                                          HandResponse {
+                                             hand: gs.get_hand(player.turn_number),
+                                          },
+                                       )))?,
+                                    );
+                                 }
+                                 let _ = send_or_log_and_report_ise(sender, public_gs_json.clone());
                               }
+                              Connection::Disconnected(_) => (),
                            }
-                           Connection::Disconnected(_) => (),
                         }
                      }
-                  } else {
-                     send_or_log_and_report_ise(&mut self.out, serde_json::to_vec("illegal")?)?;
+                     Err(e) => {
+                        send_or_log_and_report_ise(&mut self.out, serde_json::to_vec(&format!("{}", e))?)?;
+                     }
                   }
+
                   Ok(())
                } else {
                   send_or_log_and_report_ise(
@@ -635,27 +643,30 @@ impl Server {
                      return Ok(());
                   };
 
-                  if result.is_ok() {
-                     let public_gs_json =
-                        serde_json::to_vec(&PalaceOutMessage::PublicGameStateEvent(&gs.public_state())).unwrap();
-                     for (id, player) in &mut lobby.players {
-                        match player.connection {
-                           Connection::Connected(ref mut sender) => {
-                              let _ = send_or_log_and_report_ise(sender, public_gs_json.clone());
-                              if *id == message.player_id {
-                                 let _ = send_or_log_and_report_ise(
-                                    sender,
-                                    serde_json::to_vec(&PalaceOutMessage::MakePlayResponse(&Ok(HandResponse {
-                                       hand: gs.get_hand(player.turn_number),
-                                    })))?,
-                                 );
+                  match result {
+                     Ok(()) => {
+                        let public_gs_json =
+                           serde_json::to_vec(&PalaceOutMessage::PublicGameStateEvent(&gs.public_state())).unwrap();
+                        for (id, player) in &mut lobby.players {
+                           match player.connection {
+                              Connection::Connected(ref mut sender) => {
+                                 if *id == message.player_id {
+                                    let _ = send_or_log_and_report_ise(
+                                       sender,
+                                       serde_json::to_vec(&PalaceOutMessage::MakePlayResponse(&Ok(HandResponse {
+                                          hand: gs.get_hand(player.turn_number),
+                                       })))?,
+                                    );
+                                 }
+                                 let _ = send_or_log_and_report_ise(sender, public_gs_json.clone());
                               }
+                              Connection::Disconnected(_) => (),
                            }
-                           Connection::Disconnected(_) => (),
                         }
                      }
-                  } else {
-                     send_or_log_and_report_ise(&mut self.out, serde_json::to_vec("illegal")?)?;
+                     Err(e) => {
+                        send_or_log_and_report_ise(&mut self.out, serde_json::to_vec(&format!("{}", e))?)?;
+                     }
                   }
 
                   Ok(())
@@ -734,6 +745,7 @@ fn main() {
 }
 
 fn run_server(address: &'static str) {
+   pretty_env_logger::init();
    // @Performance this could be a concurrent hashmap
    let lobbies: Arc<RwLock<HashMap<LobbyId, Lobby>>> = Arc::new(RwLock::new(HashMap::new()));
 
