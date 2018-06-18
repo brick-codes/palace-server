@@ -108,7 +108,7 @@ struct NewLobbyResponse {
    lobby_id: LobbyId,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 enum NewLobbyError {
    LessThanTwoMaxPlayers,
    EmptyLobbyName,
@@ -122,12 +122,12 @@ struct JoinLobbyMessage {
    password: String,
 }
 
-#[derive(Serialize)]
+#[derive(Deserialize, Serialize)]
 struct JoinLobbyResponse {
    player_id: PlayerId,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 enum JoinLobbyError {
    LobbyNotFound,
    LobbyFull,
@@ -142,7 +142,7 @@ struct StartGameMessage {
    player_id: PlayerId,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct ChooseFaceupMessage {
    lobby_id: LobbyId,
    player_id: PlayerId,
@@ -194,7 +194,7 @@ enum PalaceMessage {
    Reconnect(ReconnectMessage),
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 enum MakePlayError {
    LobbyNotFound,
    GameNotStarted,
@@ -202,7 +202,7 @@ enum MakePlayError {
    NotYourTurn,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 enum ChooseFaceupError {
    LobbyNotFound,
    GameNotStarted,
