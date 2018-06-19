@@ -13,10 +13,12 @@ extern crate ws;
 mod ai;
 mod game;
 
+use ai::PalaceAi;
 use game::GameState;
 use rand::Rng;
 use serde::{Deserialize, Deserializer, Serializer};
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use ws::{CloseCode, Handler, Handshake, Message, Sender};
@@ -48,6 +50,7 @@ where
 
 struct Lobby {
    players: HashMap<PlayerId, Player>,
+   ai_players: HashSet<u8>,
    max_players: u8,
    password: String,
    game: Option<GameState>,
@@ -86,6 +89,7 @@ struct LobbyDisplay<'a> {
 enum Connection {
    Connected(ws::Sender),
    Disconnected(Instant),
+   Ai(Box<PalaceAi + Send + Sync>),
 }
 
 struct Player {
@@ -128,7 +132,7 @@ struct JoinLobbyResponse<'a> {
    lobby_players: Vec<&'a str>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Serialize)]
 enum JoinLobbyError {
    LobbyNotFound,
    LobbyFull,
@@ -143,7 +147,7 @@ struct StartGameMessage {
    player_id: PlayerId,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct ChooseFaceupMessage {
    lobby_id: LobbyId,
    player_id: PlayerId,
@@ -195,7 +199,7 @@ enum PalaceMessage {
    Reconnect(ReconnectMessage),
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Serialize)]
 enum MakePlayError {
    LobbyNotFound,
    GameNotStarted,
@@ -203,7 +207,7 @@ enum MakePlayError {
    NotYourTurn,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Serialize)]
 enum ChooseFaceupError {
    LobbyNotFound,
    GameNotStarted,
@@ -232,7 +236,7 @@ enum PalaceOutMessage<'a> {
    ChooseFaceupResponse(Result<HandResponse<'a>, ChooseFaceupError>),
    MakePlayResponse(Result<HandResponse<'a>, MakePlayError>),
    ReconnectResponse(Result<(), ReconnectError>),
-   PublicGameStateEvent(game::PublicGameState<'a>),
+   PublicGameStateEvent(&'a game::PublicGameState<'a>),
    GameStartedEvent(GameStartedEvent<'a>),
    PlayerJoinEvent(PlayerJoinEvent<'a>),
 }
@@ -343,9 +347,7 @@ impl Server {
             if message.player_name.is_empty() {
                send_or_log_and_report_ise(
                   &mut self.out,
-                  serde_json::to_vec(&PalaceOutMessage::NewLobbyResponse(Err(
-                     NewLobbyError::EmptyPlayerName,
-                  )))?,
+                  serde_json::to_vec(&PalaceOutMessage::NewLobbyResponse(Err(NewLobbyError::EmptyPlayerName)))?,
                )?;
                return Ok(());
             }
@@ -366,6 +368,7 @@ impl Server {
                lobby_id,
                Lobby {
                   players,
+                  ai_players: HashSet::new(),
                   game: None,
                   password: message.password,
                   name: message.lobby_name,
@@ -427,6 +430,14 @@ impl Server {
                }
 
                let player_id = PlayerId(rand::random());
+               send_or_log_and_report_ise(
+                  &mut self.out,
+                  serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(Ok(JoinLobbyResponse {
+                     player_id,
+                     lobby_players: lobby.players.values().map(|x| x.name.as_ref()).collect(),
+                  })))?,
+               )?;
+
                lobby.players.insert(
                   player_id,
                   Player {
@@ -436,13 +447,7 @@ impl Server {
                   },
                );
                self.connected_lobby_player = Some((message.lobby_id, player_id));
-               send_or_log_and_report_ise(
-                  &mut self.out,
-                  serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(Ok(JoinLobbyResponse {
-                     player_id,
-                     lobby_players: lobby.players.values().map(|x| x.name.as_ref()).collect(),
-                  })))?,
-               )?;
+
                let new_num_players = lobby.players.len() as u8;
                for (id, player) in &mut lobby.players {
                   if *id == player_id {
@@ -459,15 +464,14 @@ impl Server {
                         );
                      }
                      Connection::Disconnected(_) => (),
+                     Connection::Ai(_) => unreachable!(),
                   }
                }
                Ok(())
             } else {
                send_or_log_and_report_ise(
                   &mut self.out,
-                  serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(Err(
-                     JoinLobbyError::LobbyNotFound,
-                  )))?,
+                  serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(Err(JoinLobbyError::LobbyNotFound)))?,
                )?;
                Ok(())
             }
@@ -499,9 +503,7 @@ impl Server {
                if message.player_id != lobby.owner {
                   send_or_log_and_report_ise(
                      &mut self.out,
-                     serde_json::to_vec(&PalaceOutMessage::StartGameResponse(Err(
-                        StartGameError::NotLobbyOwner,
-                     )))?,
+                     serde_json::to_vec(&PalaceOutMessage::StartGameResponse(Err(StartGameError::NotLobbyOwner)))?,
                   )?;
                   return Ok(());
                }
@@ -517,8 +519,10 @@ impl Server {
 
                let num_players = lobby.players.len() as u8;
                let gs = GameState::new(num_players);
-               let public_gs_json = serde_json::to_vec(&PalaceOutMessage::PublicGameStateEvent(gs.public_state()))?;
                lobby.game = Some(gs);
+
+               let public_gs = lobby.game.as_ref().unwrap().public_state();
+               let public_gs_json = serde_json::to_vec(&PalaceOutMessage::PublicGameStateEvent(&public_gs))?;
                let mut turn_numbers: Vec<u8> = (0..num_players).collect();
                rand::thread_rng().shuffle(&mut turn_numbers);
                let mut turn_numbers = turn_numbers.into_iter();
@@ -529,26 +533,30 @@ impl Server {
                         let _ = send_or_log_and_report_ise(
                            sender,
                            serde_json::to_vec(&PalaceOutMessage::GameStartedEvent(GameStartedEvent {
-                              hand: lobby.game.as_mut().unwrap().get_hand(player.turn_number),
+                              hand: lobby.game.as_ref().unwrap().get_hand(player.turn_number),
                               turn_number: player.turn_number,
                            }))?,
                         );
                         let _ = send_or_log_and_report_ise(sender, public_gs_json.clone());
                      }
                      Connection::Disconnected(_) => (),
+                     Connection::Ai(ref mut ai) => ai.on_game_start(GameStartedEvent {
+                        hand: lobby.game.as_ref().unwrap().get_hand(player.turn_number),
+                        turn_number: player.turn_number,
+                     }),
                   }
                }
+
                send_or_log_and_report_ise(
                   &mut self.out,
                   serde_json::to_vec(&PalaceOutMessage::StartGameResponse(Ok(())))?,
                )?;
+
                Ok(())
             } else {
                send_or_log_and_report_ise(
                   &mut self.out,
-                  serde_json::to_vec(&PalaceOutMessage::StartGameResponse(Err(
-                     StartGameError::LobbyNotFound,
-                  )))?,
+                  serde_json::to_vec(&PalaceOutMessage::StartGameResponse(Err(StartGameError::LobbyNotFound)))?,
                )?;
                Ok(())
             }
@@ -580,29 +588,34 @@ impl Server {
 
                   match result {
                      Ok(()) => {
+                        let public_gs = gs.public_state();
                         let public_gs_json =
-                           serde_json::to_vec(&PalaceOutMessage::PublicGameStateEvent(gs.public_state())).unwrap();
+                           serde_json::to_vec(&PalaceOutMessage::PublicGameStateEvent(&public_gs)).unwrap();
                         for (id, player) in &mut lobby.players {
                            match player.connection {
                               Connection::Connected(ref mut sender) => {
                                  if *id == message.player_id {
                                     let _ = send_or_log_and_report_ise(
                                        sender,
-                                       serde_json::to_vec(&PalaceOutMessage::ChooseFaceupResponse(Ok(
-                                          HandResponse {
-                                             hand: gs.get_hand(player.turn_number),
-                                          },
-                                       )))?,
+                                       serde_json::to_vec(&PalaceOutMessage::ChooseFaceupResponse(Ok(HandResponse {
+                                          hand: gs.get_hand(player.turn_number),
+                                       })))?,
                                     );
                                  }
                                  let _ = send_or_log_and_report_ise(sender, public_gs_json.clone());
                               }
                               Connection::Disconnected(_) => (),
+                              Connection::Ai(ref mut ai) => {
+                                 if *id == message.player_id {
+                                    ai.on_hand_update(gs.get_hand(player.turn_number));
+                                 }
+                                 ai.on_game_state_update(&public_gs);
+                              }
                            }
                         }
                      }
                      Err(e) => {
-                        send_or_log_and_report_ise(&mut self.out, serde_json::to_vec(&format!("{}", e))?)?;
+                        send_or_log_and_report_ise(&mut self.out, serde_json::to_vec(&e.to_string())?)?;
                      }
                   }
 
@@ -649,8 +662,9 @@ impl Server {
 
                   match result {
                      Ok(()) => {
+                        let public_gs = gs.public_state();
                         let public_gs_json =
-                           serde_json::to_vec(&PalaceOutMessage::PublicGameStateEvent(gs.public_state())).unwrap();
+                           serde_json::to_vec(&PalaceOutMessage::PublicGameStateEvent(&public_gs)).unwrap();
                         for (id, player) in &mut lobby.players {
                            match player.connection {
                               Connection::Connected(ref mut sender) => {
@@ -665,11 +679,17 @@ impl Server {
                                  let _ = send_or_log_and_report_ise(sender, public_gs_json.clone());
                               }
                               Connection::Disconnected(_) => (),
+                              Connection::Ai(ref mut ai) => {
+                                 if *id == message.player_id {
+                                    ai.on_hand_update(gs.get_hand(player.turn_number));
+                                 }
+                                 ai.on_game_state_update(&public_gs);
+                              }
                            }
                         }
                      }
                      Err(e) => {
-                        send_or_log_and_report_ise(&mut self.out, serde_json::to_vec(&format!("{}", e))?)?;
+                        send_or_log_and_report_ise(&mut self.out, serde_json::to_vec(&e.to_string())?)?;
                      }
                   }
 
@@ -704,7 +724,7 @@ impl Server {
                      )?;
                      send_or_log_and_report_ise(
                         &mut self.out,
-                        serde_json::to_vec(&PalaceOutMessage::PublicGameStateEvent(gs.public_state()))?,
+                        serde_json::to_vec(&PalaceOutMessage::PublicGameStateEvent(&gs.public_state()))?,
                      )?;
                   }
                   send_or_log_and_report_ise(
@@ -724,9 +744,7 @@ impl Server {
             } else {
                send_or_log_and_report_ise(
                   &mut self.out,
-                  serde_json::to_vec(&PalaceOutMessage::ReconnectResponse(Err(
-                     ReconnectError::LobbyNotFound,
-                  )))?,
+                  serde_json::to_vec(&PalaceOutMessage::ReconnectResponse(Err(ReconnectError::LobbyNotFound)))?,
                )?;
                Ok(())
             }
@@ -766,6 +784,7 @@ fn run_server(address: &'static str) {
                      return true;
                   }
                   Connection::Disconnected(_) => (),
+                  Connection::Ai(_) => (),
                }
             }
             false
