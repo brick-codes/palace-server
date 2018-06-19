@@ -126,6 +126,7 @@ pub(crate) enum MakePlayError {
    GameNotStarted,
    PlayerNotFound,
    NotYourTurn,
+   GameError(&'static str),
 }
 
 #[derive(Serialize)]
@@ -134,6 +135,7 @@ pub(crate) enum ChooseFaceupError {
    GameNotStarted,
    PlayerNotFound,
    NotYourTurn,
+   GameError(&'static str),
 }
 
 #[derive(Serialize)]

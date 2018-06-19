@@ -405,8 +405,7 @@ impl Server {
                         Ok(())
                      }
                      Err(e) => {
-                        // TODO TEMP NOTHING
-                        Ok(())
+                        serialize_and_send(&mut self.out, &PalaceOutMessage::ChooseFaceupResponse(Err(ChooseFaceupError::GameError(e))))
                      }
                   }
                } else {
@@ -471,8 +470,7 @@ impl Server {
                         Ok(())
                      }
                      Err(e) => {
-                        // TODO TEMP NOTHING
-                        Ok(())
+                        serialize_and_send(&mut self.out, &PalaceOutMessage::MakePlayResponse(Err(MakePlayError::GameError(e))))
                      }
                   }
                } else {
