@@ -11,9 +11,11 @@ extern crate serde_json;
 extern crate ws;
 
 mod ai;
+mod data;
 mod game;
 
 use ai::PalaceAi;
+use data::*;
 use game::GameState;
 use rand::Rng;
 use serde::{Deserialize, Deserializer, Serializer};
@@ -59,33 +61,6 @@ struct Lobby {
    creation_time: Instant,
 }
 
-impl Lobby {
-   fn display(&self, lobby_id: &LobbyId) -> LobbyDisplay {
-      LobbyDisplay {
-         cur_players: self.players.len() as u8,
-         max_players: self.max_players,
-         started: self.game.is_some(),
-         has_password: !self.password.is_empty(),
-         owner: &self.players[&self.owner].name,
-         name: &self.name,
-         age: self.creation_time.elapsed().as_secs(),
-         lobby_id: *lobby_id,
-      }
-   }
-}
-
-#[derive(Serialize)]
-struct LobbyDisplay<'a> {
-   cur_players: u8,
-   max_players: u8,
-   started: bool,
-   has_password: bool,
-   owner: &'a str,
-   name: &'a str,
-   age: u64,
-   lobby_id: LobbyId,
-}
-
 enum Connection {
    Connected(ws::Sender),
    Disconnected(Instant),
@@ -96,149 +71,6 @@ struct Player {
    name: String,
    connection: Connection,
    turn_number: u8,
-}
-
-#[derive(Deserialize)]
-struct NewLobbyMessage {
-   max_players: u8,
-   password: String,
-   lobby_name: String,
-   player_name: String,
-}
-
-#[derive(Serialize)]
-struct NewLobbyResponse {
-   player_id: PlayerId,
-   lobby_id: LobbyId,
-}
-
-#[derive(Debug, Serialize)]
-enum NewLobbyError {
-   LessThanTwoMaxPlayers,
-   EmptyLobbyName,
-   EmptyPlayerName,
-}
-
-#[derive(Deserialize)]
-struct JoinLobbyMessage {
-   lobby_id: LobbyId,
-   player_name: String,
-   password: String,
-}
-
-#[derive(Serialize)]
-struct JoinLobbyResponse<'a> {
-   player_id: PlayerId,
-   lobby_players: Vec<&'a str>,
-}
-
-#[derive(Serialize)]
-enum JoinLobbyError {
-   LobbyNotFound,
-   LobbyFull,
-   BadPassword,
-   GameInProgress,
-   EmptyPlayerName,
-}
-
-#[derive(Deserialize)]
-struct StartGameMessage {
-   lobby_id: LobbyId,
-   player_id: PlayerId,
-}
-
-#[derive(Deserialize)]
-struct ChooseFaceupMessage {
-   lobby_id: LobbyId,
-   player_id: PlayerId,
-   card_one: game::Card,
-   card_two: game::Card,
-   card_three: game::Card,
-}
-
-#[derive(Deserialize)]
-struct MakePlayMessage {
-   cards: Box<[game::Card]>,
-   lobby_id: LobbyId,
-   player_id: PlayerId,
-}
-
-#[derive(Serialize)]
-struct HandResponse<'a> {
-   hand: &'a [game::Card],
-}
-
-#[derive(Serialize)]
-struct GameStartedEvent<'a> {
-   hand: &'a [game::Card],
-   turn_number: u8,
-}
-
-#[derive(Serialize)]
-enum StartGameError {
-   LobbyNotFound,
-   NotLobbyOwner,
-   LessThanTwoPlayers,
-   GameInProgress,
-}
-
-#[derive(Deserialize)]
-struct ReconnectMessage {
-   player_id: PlayerId,
-   lobby_id: LobbyId,
-}
-
-#[derive(Deserialize)]
-enum PalaceMessage {
-   NewLobby(NewLobbyMessage),
-   JoinLobby(JoinLobbyMessage),
-   ListLobbies,
-   StartGame(StartGameMessage),
-   ChooseFaceup(ChooseFaceupMessage),
-   MakePlay(MakePlayMessage),
-   Reconnect(ReconnectMessage),
-}
-
-#[derive(Serialize)]
-enum MakePlayError {
-   LobbyNotFound,
-   GameNotStarted,
-   PlayerNotFound,
-   NotYourTurn,
-}
-
-#[derive(Serialize)]
-enum ChooseFaceupError {
-   LobbyNotFound,
-   GameNotStarted,
-   PlayerNotFound,
-   NotYourTurn,
-}
-
-#[derive(Serialize)]
-enum ReconnectError {
-   LobbyNotFound,
-   PlayerNotFound,
-}
-
-#[derive(Serialize)]
-struct PlayerJoinEvent<'a> {
-   total_num_players: u8,
-   new_player_name: &'a str,
-}
-
-#[derive(Serialize)]
-enum PalaceOutMessage<'a> {
-   NewLobbyResponse(Result<NewLobbyResponse, NewLobbyError>),
-   JoinLobbyResponse(Result<JoinLobbyResponse<'a>, JoinLobbyError>),
-   ListLobbiesResponse(&'a [LobbyDisplay<'a>]),
-   StartGameResponse(Result<(), StartGameError>),
-   ChooseFaceupResponse(Result<HandResponse<'a>, ChooseFaceupError>),
-   MakePlayResponse(Result<HandResponse<'a>, MakePlayError>),
-   ReconnectResponse(Result<(), ReconnectError>),
-   PublicGameStateEvent(&'a game::PublicGameState<'a>),
-   GameStartedEvent(GameStartedEvent<'a>),
-   PlayerJoinEvent(PlayerJoinEvent<'a>),
 }
 
 struct Server {
@@ -277,7 +109,7 @@ impl Handler for Server {
                "Received bytes as string: {}",
                String::from_utf8(binary.clone()).unwrap_or_else(|_| "[invalid utf-8]".into())
             );
-            match serde_json::from_slice::<PalaceMessage>(&binary) {
+            match serde_json::from_slice::<PalaceInMessage>(&binary) {
                Ok(message) => {
                   match self.handle_message(message) {
                      Ok(()) => Ok(()),
@@ -323,9 +155,9 @@ impl Handler for Server {
 }
 
 impl Server {
-   fn handle_message(&mut self, message: PalaceMessage) -> Result<(), OnMessageError> {
+   fn handle_message(&mut self, message: PalaceInMessage) -> Result<(), OnMessageError> {
       match message {
-         PalaceMessage::NewLobby(message) => {
+         PalaceInMessage::NewLobby(message) => {
             if message.max_players < 2 {
                send_or_log_and_report_ise(
                   &mut self.out,
@@ -387,7 +219,7 @@ impl Server {
             )?;
             Ok(())
          }
-         PalaceMessage::JoinLobby(message) => {
+         PalaceInMessage::JoinLobby(message) => {
             // TODO (APPLIES TO ALL)
             // PUT THIS IN A FN THAT RETURNS A RESULT<JoinLobbyResponse, JoinLobbyErr)
             // DO THE JSON SERIALIZATION / MESSAGE SENDING AT THE TOP LEVEL IN ONE PLACE
@@ -476,7 +308,7 @@ impl Server {
                Ok(())
             }
          }
-         PalaceMessage::ListLobbies => {
+         PalaceInMessage::ListLobbies => {
             let lobbies = self.lobbies.read().unwrap();
             // @Performance we should be able to serialize with Serializer::collect_seq
             // and avoid collecting into a vector
@@ -488,7 +320,7 @@ impl Server {
             )?;
             Ok(())
          }
-         PalaceMessage::StartGame(message) => {
+         PalaceInMessage::StartGame(message) => {
             let mut lobbies = self.lobbies.write().unwrap();
             if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
                if lobby.game.is_some() {
@@ -561,7 +393,7 @@ impl Server {
                Ok(())
             }
          }
-         PalaceMessage::ChooseFaceup(message) => {
+         PalaceInMessage::ChooseFaceup(message) => {
             let mut lobbies = self.lobbies.write().unwrap();
             if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
                if let Some(ref mut gs) = lobby.game {
@@ -639,7 +471,7 @@ impl Server {
                Ok(())
             }
          }
-         PalaceMessage::MakePlay(message) => {
+         PalaceInMessage::MakePlay(message) => {
             let mut lobbies = self.lobbies.write().unwrap();
             if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
                if let Some(ref mut gs) = lobby.game {
@@ -709,7 +541,7 @@ impl Server {
                Ok(())
             }
          }
-         PalaceMessage::Reconnect(message) => {
+         PalaceInMessage::Reconnect(message) => {
             let mut lobbies = self.lobbies.write().unwrap();
             if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
                if let Some(player) = lobby.players.get_mut(&message.player_id) {
