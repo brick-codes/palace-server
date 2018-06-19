@@ -99,7 +99,8 @@ impl From<serde_json::error::Error> for OnMessageError {
 
 impl Handler for Server {
    fn on_message(&mut self, msg: Message) -> ws::Result<()> {
-      match msg {
+      let recv_time = Instant::now();
+      let result = match msg {
          Message::Text(_) => {
             debug!("Received text; closing connection");
             self.out.close(CloseCode::Unsupported)
@@ -126,7 +127,9 @@ impl Handler for Server {
                }
             }
          }
-      }
+      };
+      trace!("Response time: {:?}", recv_time.elapsed());
+      result
    }
 
    fn on_close(&mut self, _code: CloseCode, _reason: &str) {
