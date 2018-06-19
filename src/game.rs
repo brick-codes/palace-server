@@ -128,7 +128,7 @@ impl GameState {
             .map(|x| x.len() as u8)
             .collect::<Vec<_>>()
             .into_boxed_slice(),
-         top_card: self.pile_cards.last().cloned(),
+         top_card: self.pile_cards.last(),
          pile_size: self.pile_cards.len(),
          cleared_size: self.cleared_cards.len(),
          cur_phase: self.cur_phase,
@@ -351,7 +351,7 @@ pub struct PublicGameState<'a> {
    hands: Box<[usize]>,
    face_up_three: Box<[&'a [Card]]>,
    face_down_three: Box<[u8]>,
-   top_card: Option<Card>,
+   top_card: Option<&'a Card>,
    pile_size: usize,
    cleared_size: usize,
    cur_phase: GamePhase,
