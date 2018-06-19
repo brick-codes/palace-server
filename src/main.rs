@@ -114,14 +114,10 @@ impl Handler for Server {
                   match self.handle_message(message) {
                      Ok(()) => Ok(()),
                      // We don't log an error here because that is done
-                     // in `send_or_log_and_report_ise`
+                     // in `serialize_and_send`
                      // an error here would just be an error sending
                      // ISE which we can't handle sanely
-                     Err(OnMessageError::WebsocketError(e)) => Err(e),
-                     Err(OnMessageError::SerdeError(e)) => {
-                        error!("Failed to serialize a message: {:?}", e);
-                        self.out.send(ws::Message::binary("\"InternalServerError\""))
-                     }
+                     Err(e) => Err(e),
                   }
                }
                Err(e) => {
@@ -155,33 +151,28 @@ impl Handler for Server {
 }
 
 impl Server {
-   fn handle_message(&mut self, message: PalaceInMessage) -> Result<(), OnMessageError> {
+   fn handle_message(&mut self, message: PalaceInMessage) -> ws::Result<()> {
       match message {
          PalaceInMessage::NewLobby(message) => {
             if message.max_players < 2 {
-               send_or_log_and_report_ise(
+               return serialize_and_send(
                   &mut self.out,
-                  serde_json::to_vec(&PalaceOutMessage::NewLobbyResponse(Err(
-                     NewLobbyError::LessThanTwoMaxPlayers,
-                  )))?,
-               )?;
-               return Ok(());
+                  &PalaceOutMessage::NewLobbyResponse(Err(NewLobbyError::LessThanTwoMaxPlayers)),
+               );
             }
 
             if message.lobby_name.is_empty() {
-               send_or_log_and_report_ise(
+               return serialize_and_send(
                   &mut self.out,
-                  serde_json::to_vec(&PalaceOutMessage::NewLobbyResponse(Err(NewLobbyError::EmptyLobbyName)))?,
-               )?;
-               return Ok(());
+                  &PalaceOutMessage::NewLobbyResponse(Err(NewLobbyError::EmptyLobbyName)),
+               );
             }
 
             if message.player_name.is_empty() {
-               send_or_log_and_report_ise(
+               return serialize_and_send(
                   &mut self.out,
-                  serde_json::to_vec(&PalaceOutMessage::NewLobbyResponse(Err(NewLobbyError::EmptyPlayerName)))?,
-               )?;
-               return Ok(());
+                  &PalaceOutMessage::NewLobbyResponse(Err(NewLobbyError::EmptyPlayerName)),
+               );
             }
 
             let mut lobbies = self.lobbies.write().unwrap();
@@ -210,64 +201,52 @@ impl Server {
                },
             );
             self.connected_lobby_player = Some((lobby_id, player_id));
-            send_or_log_and_report_ise(
+            serialize_and_send(
                &mut self.out,
-               serde_json::to_vec(&PalaceOutMessage::NewLobbyResponse(Ok(NewLobbyResponse {
-                  player_id,
-                  lobby_id,
-               })))?,
-            )?;
-            Ok(())
+               &PalaceOutMessage::NewLobbyResponse(Ok(NewLobbyResponse { player_id, lobby_id })),
+            )
          }
          PalaceInMessage::JoinLobby(message) => {
             // TODO (APPLIES TO ALL)
             // PUT THIS IN A FN THAT RETURNS A RESULT<JoinLobbyResponse, JoinLobbyErr)
             // DO THE JSON SERIALIZATION / MESSAGE SENDING AT THE TOP LEVEL IN ONE PLACE
             if message.player_name.is_empty() {
-               send_or_log_and_report_ise(
+               return serialize_and_send(
                   &mut self.out,
-                  serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(Err(
-                     JoinLobbyError::EmptyPlayerName,
-                  )))?,
-               )?;
-               return Ok(());
+                  &PalaceOutMessage::JoinLobbyResponse(Err(JoinLobbyError::EmptyPlayerName)),
+               );
             }
             let mut lobbies = self.lobbies.write().unwrap();
             let mut lobby_opt = lobbies.get_mut(&message.lobby_id);
             if let Some(lobby) = lobby_opt {
                if lobby.game.is_some() {
-                  send_or_log_and_report_ise(
+                  return serialize_and_send(
                      &mut self.out,
-                     serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(Err(
-                        JoinLobbyError::GameInProgress,
-                     )))?,
-                  )?;
-                  return Ok(());
+                     &PalaceOutMessage::JoinLobbyResponse(Err(JoinLobbyError::GameInProgress)),
+                  );
                }
 
                if lobby.password != message.password {
-                  send_or_log_and_report_ise(
+                  return serialize_and_send(
                      &mut self.out,
-                     serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(Err(JoinLobbyError::BadPassword)))?,
-                  )?;
-                  return Ok(());
+                     &PalaceOutMessage::JoinLobbyResponse(Err(JoinLobbyError::BadPassword)),
+                  );
                }
 
                if lobby.players.len() as u8 >= lobby.max_players {
-                  send_or_log_and_report_ise(
+                  return serialize_and_send(
                      &mut self.out,
-                     serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(Err(JoinLobbyError::LobbyFull)))?,
-                  )?;
-                  return Ok(());
+                     &PalaceOutMessage::JoinLobbyResponse(Err(JoinLobbyError::LobbyFull)),
+                  );
                }
 
                let player_id = PlayerId(rand::random());
-               send_or_log_and_report_ise(
+               serialize_and_send(
                   &mut self.out,
-                  serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(Ok(JoinLobbyResponse {
+                  &PalaceOutMessage::JoinLobbyResponse(Ok(JoinLobbyResponse {
                      player_id,
                      lobby_players: lobby.players.values().map(|x| x.name.as_ref()).collect(),
-                  })))?,
+                  })),
                )?;
 
                lobby.players.insert(
@@ -287,12 +266,12 @@ impl Server {
                   }
                   match player.connection {
                      Connection::Connected(ref mut sender) => {
-                        let _ = send_or_log_and_report_ise(
+                        let _ = serialize_and_send(
                            sender,
-                           serde_json::to_vec(&PalaceOutMessage::PlayerJoinEvent(PlayerJoinEvent {
+                           &PalaceOutMessage::PlayerJoinEvent(PlayerJoinEvent {
                               total_num_players: new_num_players,
                               new_player_name: &player.name,
-                           }))?,
+                           }),
                         );
                      }
                      Connection::Disconnected(_) => (),
@@ -301,52 +280,43 @@ impl Server {
                }
                Ok(())
             } else {
-               send_or_log_and_report_ise(
+               return serialize_and_send(
                   &mut self.out,
-                  serde_json::to_vec(&PalaceOutMessage::JoinLobbyResponse(Err(JoinLobbyError::LobbyNotFound)))?,
-               )?;
-               Ok(())
+                  &PalaceOutMessage::JoinLobbyResponse(Err(JoinLobbyError::LobbyNotFound)),
+               );
             }
          }
          PalaceInMessage::ListLobbies => {
             let lobbies = self.lobbies.read().unwrap();
             // @Performance we should be able to serialize with Serializer::collect_seq
             // and avoid collecting into a vector
-            send_or_log_and_report_ise(
+            serialize_and_send(
                &mut self.out,
-               serde_json::to_vec(&PalaceOutMessage::ListLobbiesResponse(
-                  &lobbies.iter().map(|(k, v)| v.display(k)).collect::<Vec<_>>(),
-               ))?,
-            )?;
-            Ok(())
+               &PalaceOutMessage::ListLobbiesResponse(&lobbies.iter().map(|(k, v)| v.display(k)).collect::<Vec<_>>()),
+            )
          }
          PalaceInMessage::StartGame(message) => {
             let mut lobbies = self.lobbies.write().unwrap();
             if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
                if lobby.game.is_some() {
-                  self
-                     .out
-                     .send(serde_json::to_vec(&PalaceOutMessage::StartGameResponse(Err(
-                        StartGameError::GameInProgress,
-                     )))?)?;
-                  return Ok(());
+                  return serialize_and_send(
+                     &mut self.out,
+                     &PalaceOutMessage::StartGameResponse(Err(StartGameError::GameInProgress)),
+                  );
                }
 
                if message.player_id != lobby.owner {
-                  send_or_log_and_report_ise(
+                  return serialize_and_send(
                      &mut self.out,
-                     serde_json::to_vec(&PalaceOutMessage::StartGameResponse(Err(StartGameError::NotLobbyOwner)))?,
-                  )?;
-                  return Ok(());
+                     &PalaceOutMessage::StartGameResponse(Err(StartGameError::NotLobbyOwner)),
+                  );
                }
 
                if lobby.players.len() < 2 {
-                  self
-                     .out
-                     .send(serde_json::to_vec(&PalaceOutMessage::StartGameResponse(Err(
-                        StartGameError::LessThanTwoPlayers,
-                     )))?)?;
-                  return Ok(());
+                  return serialize_and_send(
+                     &mut self.out,
+                     &PalaceOutMessage::StartGameResponse(Err(StartGameError::LessThanTwoPlayers)),
+                  );
                }
 
                let num_players = lobby.players.len() as u8;
@@ -354,7 +324,6 @@ impl Server {
                lobby.game = Some(gs);
 
                let public_gs = lobby.game.as_ref().unwrap().public_state();
-               let public_gs_json = serde_json::to_vec(&PalaceOutMessage::PublicGameStateEvent(&public_gs))?;
                let mut turn_numbers: Vec<u8> = (0..num_players).collect();
                rand::thread_rng().shuffle(&mut turn_numbers);
                let mut turn_numbers = turn_numbers.into_iter();
@@ -362,14 +331,14 @@ impl Server {
                   player.turn_number = turn_numbers.next().unwrap();
                   match player.connection {
                      Connection::Connected(ref mut sender) => {
-                        let _ = send_or_log_and_report_ise(
+                        let _ = serialize_and_send(
                            sender,
-                           serde_json::to_vec(&PalaceOutMessage::GameStartedEvent(GameStartedEvent {
+                           &PalaceOutMessage::GameStartedEvent(GameStartedEvent {
                               hand: lobby.game.as_ref().unwrap().get_hand(player.turn_number),
                               turn_number: player.turn_number,
-                           }))?,
+                           }),
                         );
-                        let _ = send_or_log_and_report_ise(sender, public_gs_json.clone());
+                        let _ = serialize_and_send(sender, &PalaceOutMessage::PublicGameStateEvent(&public_gs));
                      }
                      Connection::Disconnected(_) => (),
                      Connection::Ai(ref mut ai) => ai.on_game_start(GameStartedEvent {
@@ -379,18 +348,12 @@ impl Server {
                   }
                }
 
-               send_or_log_and_report_ise(
-                  &mut self.out,
-                  serde_json::to_vec(&PalaceOutMessage::StartGameResponse(Ok(())))?,
-               )?;
-
-               Ok(())
+               serialize_and_send(&mut self.out, &PalaceOutMessage::StartGameResponse(Ok(())))
             } else {
-               send_or_log_and_report_ise(
+               serialize_and_send(
                   &mut self.out,
-                  serde_json::to_vec(&PalaceOutMessage::StartGameResponse(Err(StartGameError::LobbyNotFound)))?,
-               )?;
-               Ok(())
+                  &PalaceOutMessage::StartGameResponse(Err(StartGameError::LobbyNotFound)),
+               )
             }
          }
          PalaceInMessage::ChooseFaceup(message) => {
@@ -399,42 +362,35 @@ impl Server {
                if let Some(ref mut gs) = lobby.game {
                   let result = if let Some(player) = lobby.players.get(&message.player_id) {
                      if player.turn_number != gs.active_player {
-                        send_or_log_and_report_ise(
+                        return serialize_and_send(
                            &mut self.out,
-                           serde_json::to_vec(&PalaceOutMessage::ChooseFaceupResponse(Err(
-                              ChooseFaceupError::NotYourTurn,
-                           )))?,
-                        )?;
-                        return Ok(());
+                           &PalaceOutMessage::ChooseFaceupResponse(Err(ChooseFaceupError::NotYourTurn)),
+                        );
                      }
                      gs.choose_three_faceup(message.card_one, message.card_two, message.card_three)
                   } else {
-                     send_or_log_and_report_ise(
+                     return serialize_and_send(
                         &mut self.out,
-                        serde_json::to_vec(&PalaceOutMessage::ChooseFaceupResponse(Err(
-                           ChooseFaceupError::PlayerNotFound,
-                        )))?,
-                     )?;
-                     return Ok(());
+                        &PalaceOutMessage::ChooseFaceupResponse(Err(ChooseFaceupError::PlayerNotFound)),
+                     );
                   };
 
                   match result {
                      Ok(()) => {
                         let public_gs = gs.public_state();
-                        let public_gs_json =
-                           serde_json::to_vec(&PalaceOutMessage::PublicGameStateEvent(&public_gs)).unwrap();
                         for (id, player) in &mut lobby.players {
                            match player.connection {
                               Connection::Connected(ref mut sender) => {
                                  if *id == message.player_id {
-                                    let _ = send_or_log_and_report_ise(
+                                    let _ = serialize_and_send(
                                        sender,
-                                       serde_json::to_vec(&PalaceOutMessage::ChooseFaceupResponse(Ok(HandResponse {
+                                       &PalaceOutMessage::ChooseFaceupResponse(Ok(HandResponse {
                                           hand: gs.get_hand(player.turn_number),
-                                       })))?,
+                                       })),
                                     );
                                  }
-                                 let _ = send_or_log_and_report_ise(sender, public_gs_json.clone());
+                                 let _ =
+                                    serialize_and_send(sender, &PalaceOutMessage::PublicGameStateEvent(&public_gs));
                               }
                               Connection::Disconnected(_) => (),
                               Connection::Ai(ref mut ai) => {
@@ -445,30 +401,25 @@ impl Server {
                               }
                            }
                         }
+                        
+                        Ok(())
                      }
                      Err(e) => {
-                        send_or_log_and_report_ise(&mut self.out, serde_json::to_vec(&e.to_string())?)?;
+                        // TODO TEMP NOTHING
+                        Ok(())
                      }
                   }
-
-                  Ok(())
                } else {
-                  send_or_log_and_report_ise(
+                  serialize_and_send(
                      &mut self.out,
-                     serde_json::to_vec(&PalaceOutMessage::ChooseFaceupResponse(Err(
-                        ChooseFaceupError::GameNotStarted,
-                     )))?,
-                  )?;
-                  Ok(())
+                     &PalaceOutMessage::ChooseFaceupResponse(Err(ChooseFaceupError::GameNotStarted)),
+                  )
                }
             } else {
-               send_or_log_and_report_ise(
+               serialize_and_send(
                   &mut self.out,
-                  serde_json::to_vec(&PalaceOutMessage::ChooseFaceupResponse(Err(
-                     ChooseFaceupError::LobbyNotFound,
-                  )))?,
-               )?;
-               Ok(())
+                  &PalaceOutMessage::ChooseFaceupResponse(Err(ChooseFaceupError::LobbyNotFound)),
+               )
             }
          }
          PalaceInMessage::MakePlay(message) => {
@@ -477,38 +428,35 @@ impl Server {
                if let Some(ref mut gs) = lobby.game {
                   let result = if let Some(player) = lobby.players.get(&message.player_id) {
                      if player.turn_number != gs.active_player {
-                        send_or_log_and_report_ise(
+                        return serialize_and_send(
                            &mut self.out,
-                           serde_json::to_vec(&PalaceOutMessage::MakePlayResponse(Err(MakePlayError::NotYourTurn)))?,
-                        )?;
-                        return Ok(());
+                           &PalaceOutMessage::MakePlayResponse(Err(MakePlayError::NotYourTurn)),
+                        );
                      }
                      gs.make_play(message.cards)
                   } else {
-                     send_or_log_and_report_ise(
+                     return serialize_and_send(
                         &mut self.out,
-                        serde_json::to_vec(&PalaceOutMessage::MakePlayResponse(Err(MakePlayError::PlayerNotFound)))?,
-                     )?;
-                     return Ok(());
+                        &PalaceOutMessage::MakePlayResponse(Err(MakePlayError::PlayerNotFound)),
+                     );
                   };
 
                   match result {
                      Ok(()) => {
                         let public_gs = gs.public_state();
-                        let public_gs_json =
-                           serde_json::to_vec(&PalaceOutMessage::PublicGameStateEvent(&public_gs)).unwrap();
                         for (id, player) in &mut lobby.players {
                            match player.connection {
                               Connection::Connected(ref mut sender) => {
                                  if *id == message.player_id {
-                                    let _ = send_or_log_and_report_ise(
+                                    let _ = serialize_and_send(
                                        sender,
-                                       serde_json::to_vec(&PalaceOutMessage::MakePlayResponse(Ok(HandResponse {
+                                       &PalaceOutMessage::MakePlayResponse(Ok(HandResponse {
                                           hand: gs.get_hand(player.turn_number),
-                                       })))?,
+                                       })),
                                     );
                                  }
-                                 let _ = send_or_log_and_report_ise(sender, public_gs_json.clone());
+                                 let _ =
+                                    serialize_and_send(sender, &PalaceOutMessage::PublicGameStateEvent(&public_gs));
                               }
                               Connection::Disconnected(_) => (),
                               Connection::Ai(ref mut ai) => {
@@ -519,26 +467,25 @@ impl Server {
                               }
                            }
                         }
+
+                        Ok(())
                      }
                      Err(e) => {
-                        send_or_log_and_report_ise(&mut self.out, serde_json::to_vec(&e.to_string())?)?;
+                        // TODO TEMP NOTHING
+                        Ok(())
                      }
                   }
-
-                  Ok(())
                } else {
-                  send_or_log_and_report_ise(
+                  serialize_and_send(
                      &mut self.out,
-                     serde_json::to_vec(&PalaceOutMessage::MakePlayResponse(Err(MakePlayError::GameNotStarted)))?,
-                  )?;
-                  Ok(())
+                     &PalaceOutMessage::MakePlayResponse(Err(MakePlayError::GameNotStarted)),
+                  )
                }
             } else {
-               send_or_log_and_report_ise(
+               serialize_and_send(
                   &mut self.out,
-                  serde_json::to_vec(&PalaceOutMessage::MakePlayResponse(Err(MakePlayError::LobbyNotFound)))?,
-               )?;
-               Ok(())
+                  &PalaceOutMessage::MakePlayResponse(Err(MakePlayError::LobbyNotFound)),
+               )
             }
          }
          PalaceInMessage::Reconnect(message) => {
@@ -547,36 +494,35 @@ impl Server {
                if let Some(player) = lobby.players.get_mut(&message.player_id) {
                   player.connection = Connection::Connected(self.out.clone());
                   if let Some(ref gs) = lobby.game {
-                     send_or_log_and_report_ise(
+                     let _ = serialize_and_send(
                         &mut self.out,
-                        serde_json::to_vec(&PalaceOutMessage::GameStartedEvent(GameStartedEvent {
+                        &PalaceOutMessage::GameStartedEvent(GameStartedEvent {
                            hand: gs.get_hand(player.turn_number),
                            turn_number: player.turn_number,
-                        }))?,
-                     )?;
-                     send_or_log_and_report_ise(
+                        }),
+                     );
+                     let _ = serialize_and_send(
                         &mut self.out,
-                        serde_json::to_vec(&PalaceOutMessage::PublicGameStateEvent(&gs.public_state()))?,
-                     )?;
+                        &PalaceOutMessage::PublicGameStateEvent(&gs.public_state()),
+                     );
                   }
-                  send_or_log_and_report_ise(
+
+                  serialize_and_send(
                      &mut self.out,
-                     serde_json::to_vec(&PalaceOutMessage::ReconnectResponse(Ok(())))?,
-                  )?;
-                  Ok(())
+                     &PalaceOutMessage::ReconnectResponse(Ok(())),
+                  )
                } else {
-                  send_or_log_and_report_ise(
+                  serialize_and_send(
                      &mut self.out,
-                     serde_json::to_vec(&PalaceOutMessage::ReconnectResponse(Err(
+                     &PalaceOutMessage::ReconnectResponse(Err(
                         ReconnectError::PlayerNotFound,
-                     )))?,
-                  )?;
-                  Ok(())
+                     )),
+                  )
                }
             } else {
-               send_or_log_and_report_ise(
+               serialize_and_send(
                   &mut self.out,
-                  serde_json::to_vec(&PalaceOutMessage::ReconnectResponse(Err(ReconnectError::LobbyNotFound)))?,
+                  &PalaceOutMessage::ReconnectResponse(Err(ReconnectError::LobbyNotFound)),
                )?;
                Ok(())
             }
@@ -585,12 +531,20 @@ impl Server {
    }
 }
 
-fn send_or_log_and_report_ise(s: &mut Sender, message: Vec<u8>) -> ws::Result<()> {
-   if let Err(e) = s.send(message) {
-      error!("Failed to send a message: {:?}", e);
-      s.send(ws::Message::binary("\"InternalServerError\""))
-   } else {
-      Ok(())
+fn serialize_and_send(s: &mut Sender, message: &PalaceOutMessage) -> ws::Result<()> {
+   match serde_json::to_vec(message) {
+      Ok(bytes) => {
+         if let Err(e) = s.send(bytes) {
+            error!("Failed to send a message: {:?}", e);
+            s.send(ws::Message::binary("\"InternalServerError\""))
+         } else {
+            Ok(())
+         }
+      }
+      Err(e) => {
+         error!("Failed to serialize a message: {:?}", e);
+         s.send(ws::Message::binary("\"InternalServerError\""))
+      }
    }
 }
 

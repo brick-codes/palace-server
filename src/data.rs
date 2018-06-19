@@ -1,5 +1,5 @@
-use {Lobby, LobbyId, PlayerId};
 use game::{Card, PublicGameState};
+use {Lobby, LobbyId, PlayerId};
 
 impl Lobby {
    pub(crate) fn display(&self, lobby_id: &LobbyId) -> LobbyDisplay {
