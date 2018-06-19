@@ -108,7 +108,7 @@ impl GameState {
       }
    }
 
-   pub fn public_state(&self) -> PublicGameState {
+   pub(crate) fn public_state(&self) -> PublicGameState {
       PublicGameState {
          hands: self
             .hands
@@ -347,16 +347,16 @@ impl GameState {
 }
 
 #[derive(Serialize)]
-pub struct PublicGameState<'a> {
-   hands: Box<[usize]>,
-   face_up_three: Box<[&'a [Card]]>,
-   face_down_three: Box<[u8]>,
-   top_card: Option<&'a Card>,
-   pile_size: usize,
-   cleared_size: usize,
-   cur_phase: GamePhase,
-   active_player: u8,
-   last_cards_played: &'a [Card],
+pub(crate) struct PublicGameState<'a> {
+   pub hands: Box<[usize]>,
+   pub face_up_three: Box<[&'a [Card]]>,
+   pub face_down_three: Box<[u8]>,
+   pub top_card: Option<&'a Card>,
+   pub pile_size: usize,
+   pub cleared_size: usize,
+   pub cur_phase: GamePhase,
+   pub active_player: u8,
+   pub last_cards_played: &'a [Card],
 }
 
 mod test {

@@ -111,14 +111,11 @@ impl Handler for Server {
             );
             match serde_json::from_slice::<PalaceInMessage>(&binary) {
                Ok(message) => {
-                  match self.handle_message(message) {
-                     Ok(()) => Ok(()),
-                     // We don't log an error here because that is done
-                     // in `serialize_and_send`
-                     // an error here would just be an error sending
-                     // ISE which we can't handle sanely
-                     Err(e) => Err(e),
-                  }
+                  // We don't log an error here because that is done
+                  // in `serialize_and_send`
+                  // an error here would just be an error sending
+                  // ISE which we can't handle sanely
+                  self.handle_message(message)
                }
                Err(e) => {
                   debug!(
@@ -401,12 +398,13 @@ impl Server {
                               }
                            }
                         }
-                        
+
                         Ok(())
                      }
-                     Err(e) => {
-                        serialize_and_send(&mut self.out, &PalaceOutMessage::ChooseFaceupResponse(Err(ChooseFaceupError::GameError(e))))
-                     }
+                     Err(e) => serialize_and_send(
+                        &mut self.out,
+                        &PalaceOutMessage::ChooseFaceupResponse(Err(ChooseFaceupError::GameError(e))),
+                     ),
                   }
                } else {
                   serialize_and_send(
@@ -469,9 +467,10 @@ impl Server {
 
                         Ok(())
                      }
-                     Err(e) => {
-                        serialize_and_send(&mut self.out, &PalaceOutMessage::MakePlayResponse(Err(MakePlayError::GameError(e))))
-                     }
+                     Err(e) => serialize_and_send(
+                        &mut self.out,
+                        &PalaceOutMessage::MakePlayResponse(Err(MakePlayError::GameError(e))),
+                     ),
                   }
                } else {
                   serialize_and_send(
@@ -505,16 +504,11 @@ impl Server {
                      );
                   }
 
-                  serialize_and_send(
-                     &mut self.out,
-                     &PalaceOutMessage::ReconnectResponse(Ok(())),
-                  )
+                  serialize_and_send(&mut self.out, &PalaceOutMessage::ReconnectResponse(Ok(())))
                } else {
                   serialize_and_send(
                      &mut self.out,
-                     &PalaceOutMessage::ReconnectResponse(Err(
-                        ReconnectError::PlayerNotFound,
-                     )),
+                     &PalaceOutMessage::ReconnectResponse(Err(ReconnectError::PlayerNotFound)),
                   )
                }
             } else {
@@ -544,10 +538,6 @@ fn serialize_and_send(s: &mut Sender, message: &PalaceOutMessage) -> ws::Result<
          s.send(ws::Message::binary("\"InternalServerError\""))
       }
    }
-}
-
-fn main() {
-   run_server("0.0.0.0:3012")
 }
 
 fn run_server(address: &'static str) {
@@ -581,6 +571,10 @@ fn run_server(address: &'static str) {
       lobbies: lobbies.clone(),
       connected_lobby_player: None,
    }).unwrap()
+}
+
+fn main() {
+   run_server("0.0.0.0:3012")
 }
 
 mod test {
