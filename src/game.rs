@@ -67,7 +67,7 @@ pub struct GameState {
    face_down_three: Box<[Vec<Card>]>,
    cleared_cards: Vec<Card>,
    pile_cards: Vec<Card>,
-   cur_phase: GamePhase,
+   pub cur_phase: GamePhase,
    last_cards_played: Vec<Card>,
    out_players: Vec<u8>,
 }

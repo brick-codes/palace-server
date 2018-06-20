@@ -23,7 +23,7 @@ impl PalaceAi for RandomAi {
       "Randy".into()
    }
 
-   fn choose_faceup_cards(&mut self) -> (Card, Card, Card) {
+   fn choose_three_faceup(&mut self) -> (Card, Card, Card) {
       (self.faceup_cards[0], self.faceup_cards[1], self.faceup_cards[2])
    }
 

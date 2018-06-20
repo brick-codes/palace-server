@@ -20,7 +20,6 @@ use game::GameState;
 use rand::Rng;
 use serde::{Deserialize, Deserializer, Serializer};
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use ws::{CloseCode, Handler, Handshake, Message, Sender};
@@ -52,7 +51,7 @@ where
 
 struct Lobby {
    players: HashMap<PlayerId, Player>,
-   ai_players: HashSet<u8>,
+   ai_players: HashMap<u8, PlayerId>,
    max_players: u8,
    password: String,
    game: Option<GameState>,
@@ -94,6 +93,104 @@ impl From<ws::Error> for OnMessageError {
 impl From<serde_json::error::Error> for OnMessageError {
    fn from(e: serde_json::error::Error) -> OnMessageError {
       OnMessageError::SerdeError(e)
+   }
+}
+
+fn ai_play_loop(lobby_id: LobbyId, lobbies: Arc<RwLock<HashMap<LobbyId, Lobby>>>) {
+   loop {
+      std::thread::sleep(std::time::Duration::from_millis(100));
+      {
+         let mut lobbies = lobbies.write().unwrap();
+         if let Some(ref mut lobby) = lobbies.get_mut(&lobby_id) {
+            if let Some(ref mut gs) = lobby.game {
+               if let Some(player_id) = lobby.ai_players.get(&gs.active_player) {
+                  match gs.cur_phase {
+                     game::GamePhase::Setup => {
+                        let faceup_three = match lobby.players.get_mut(player_id).unwrap().connection {
+                           Connection::Ai(ref mut ai) => ai.choose_three_faceup(),
+                           _ => unreachable!(),
+                        };
+                        match gs.choose_three_faceup(faceup_three.0, faceup_three.1, faceup_three.2) {
+                           Ok(()) => {
+                              let public_gs = gs.public_state();
+                              for (id, player) in &mut lobby.players {
+                                 match player.connection {
+                                    Connection::Connected(ref mut sender) => {
+                                       if id == player_id {
+                                          let _ = serialize_and_send(
+                                             sender,
+                                             &PalaceOutMessage::ChooseFaceupResponse(Ok(HandResponse {
+                                                hand: gs.get_hand(player.turn_number),
+                                             })),
+                                          );
+                                       }
+                                       let _ =
+                                          serialize_and_send(sender, &PalaceOutMessage::PublicGameStateEvent(&public_gs));
+                                    }
+                                    Connection::Disconnected(_) => (),
+                                    Connection::Ai(ref mut ai) => {
+                                       if id == player_id {
+                                          ai.on_hand_update(gs.get_hand(player.turn_number));
+                                       }
+                                       ai.on_game_state_update(&public_gs);
+                                    }
+                                 }
+                              }
+                           }
+                           Err(_) => {
+                              error!("Bot failed to choose three faceup")
+                           }
+                        }
+                     }
+                     game::GamePhase::Play => {
+                        let play = match lobby.players.get_mut(player_id).unwrap().connection {
+                           Connection::Ai(ref mut ai) => ai.take_turn(),
+                           _ => unreachable!(),
+                        };
+                        match gs.make_play(play) {
+                           Ok(()) => {
+                              let public_gs = gs.public_state();
+                              for (id, player) in &mut lobby.players {
+                                 match player.connection {
+                                    Connection::Connected(ref mut sender) => {
+                                       if id == player_id {
+                                          let _ = serialize_and_send(
+                                             sender,
+                                             &PalaceOutMessage::MakePlayResponse(Ok(HandResponse {
+                                                hand: gs.get_hand(player.turn_number),
+                                             })),
+                                          );
+                                       }
+                                       let _ =
+                                          serialize_and_send(sender, &PalaceOutMessage::PublicGameStateEvent(&public_gs));
+                                    }
+                                    Connection::Disconnected(_) => (),
+                                    Connection::Ai(ref mut ai) => {
+                                       if id == player_id {
+                                          ai.on_hand_update(gs.get_hand(player.turn_number));
+                                       }
+                                       ai.on_game_state_update(&public_gs);
+                                    }
+                                 }
+                              }
+                           }
+                           Err(_) => {
+                              error!("Bot failed to make play");
+                           }
+                        }
+                     }
+                     game::GamePhase::Complete => {
+                        break;
+                     }
+                  }
+               }
+            } else {
+               continue;
+            }
+         } else {
+            break;
+         }
+      }
    }
 }
 
@@ -191,7 +288,7 @@ impl Server {
                lobby_id,
                Lobby {
                   players,
-                  ai_players: HashSet::new(),
+                  ai_players: HashMap::new(),
                   game: None,
                   password: message.password,
                   name: message.lobby_name,
@@ -201,6 +298,10 @@ impl Server {
                },
             );
             self.connected_lobby_player = Some((lobby_id, player_id));
+            let cloned_lobbies = self.lobbies.clone();
+            std::thread::spawn(move || {
+               ai_play_loop(lobby_id, cloned_lobbies);
+            });
             serialize_and_send(
                &mut self.out,
                &PalaceOutMessage::NewLobbyResponse(Ok(NewLobbyResponse { player_id, lobby_id })),

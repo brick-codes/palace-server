@@ -12,7 +12,7 @@ pub(crate) trait PalaceAi {
       "BOT".into()
    }
 
-   fn choose_faceup_cards(&mut self) -> (Card, Card, Card);
+   fn choose_three_faceup(&mut self) -> (Card, Card, Card);
 
    fn take_turn(&mut self) -> Box<[Card]>;
 
