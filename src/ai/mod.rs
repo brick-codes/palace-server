@@ -1,13 +1,9 @@
-use data::GameStartedEvent;
+use data::GameStartEvent;
 use game::{Card, PublicGameState};
 
-mod random;
+pub mod random;
 
 pub(crate) trait PalaceAi {
-   fn new() -> Self
-   where
-      Self: Sized;
-
    fn player_name(&mut self) -> String {
       "BOT".into()
    }
@@ -18,7 +14,7 @@ pub(crate) trait PalaceAi {
 
    fn on_game_state_update(&mut self, _new_state: &PublicGameState) {}
 
-   fn on_game_start(&mut self, _game_start_event: GameStartedEvent) {}
+   fn on_game_start(&mut self, _game_start_event: GameStartEvent) {}
 
    fn on_hand_update(&mut self, _new_hand: &[Card]) {}
 }

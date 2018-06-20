@@ -62,8 +62,8 @@ pub enum GamePhase {
 pub struct GameState {
    pub active_player: u8,
    num_players: u8,
-   hands: Box<[Vec<Card>]>,
-   face_up_three: Box<[Vec<Card>]>,
+   pub hands: Box<[Vec<Card>]>,
+   pub face_up_three: Box<[Vec<Card>]>,
    face_down_three: Box<[Vec<Card>]>,
    cleared_cards: Vec<Card>,
    pile_cards: Vec<Card>,

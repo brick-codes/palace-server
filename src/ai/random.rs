@@ -1,24 +1,24 @@
 // This AI plays random cards
 use ai::PalaceAi;
-use data::GameStartedEvent;
+use data::GameStartEvent;
 use game::{Card, PublicGameState};
 use rand::{self, Rng};
 
-struct RandomAi {
+pub struct RandomAi {
    hand: Box<[Card]>,
    faceup_cards: Box<[Card]>,
    turn_number: u8,
 }
 
-impl PalaceAi for RandomAi {
-   fn new() -> RandomAi {
-      RandomAi {
-         hand: vec![].into_boxed_slice(),
-         faceup_cards: vec![].into_boxed_slice(),
-         turn_number: 0,
-      }
+pub fn new() -> RandomAi {
+   RandomAi {
+      hand: vec![].into_boxed_slice(),
+      faceup_cards: vec![].into_boxed_slice(),
+      turn_number: 0,
    }
+}
 
+impl PalaceAi for RandomAi {
    fn player_name(&mut self) -> String {
       "Randy".into()
    }
@@ -39,7 +39,7 @@ impl PalaceAi for RandomAi {
       self.faceup_cards = new_state.face_up_three[self.turn_number as usize].into();
    }
 
-   fn on_game_start(&mut self, game_start_event: GameStartedEvent) {
+   fn on_game_start(&mut self, game_start_event: GameStartEvent) {
       self.hand = game_start_event.hand.into();
       self.turn_number = game_start_event.turn_number;
    }

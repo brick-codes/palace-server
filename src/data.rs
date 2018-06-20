@@ -73,13 +73,13 @@ pub(crate) enum JoinLobbyError {
    EmptyPlayerName,
 }
 
-#[derive(Deserialize)]
+#[derive(Copy, Clone, Deserialize)]
 pub(crate) struct StartGameMessage {
    pub lobby_id: LobbyId,
    pub player_id: PlayerId,
 }
 
-#[derive(Deserialize)]
+#[derive(Copy, Clone, Deserialize)]
 pub(crate) struct ChooseFaceupMessage {
    pub lobby_id: LobbyId,
    pub player_id: PlayerId,
@@ -96,12 +96,12 @@ pub(crate) struct MakePlayMessage {
 }
 
 #[derive(Serialize)]
-pub(crate) struct HandResponse<'a> {
+pub(crate) struct HandEvent<'a> {
    pub hand: &'a [Card],
 }
 
 #[derive(Serialize)]
-pub(crate) struct GameStartedEvent<'a> {
+pub(crate) struct GameStartEvent<'a> {
    pub hand: &'a [Card],
    pub turn_number: u8,
 }
@@ -150,6 +150,21 @@ pub(crate) struct PlayerJoinEvent<'a> {
    pub new_player_name: &'a str,
 }
 
+#[derive(Copy, Clone, Deserialize)]
+pub(crate) struct RequestAiMessage {
+   pub lobby_id: LobbyId,
+   pub player_id: PlayerId,
+   pub num_ai: u8,
+}
+
+#[derive(Serialize)]
+pub(crate) enum RequestAiError {
+   NotLobbyOwner,
+   LessThanOneAiRequested,
+   LobbyNotFound,
+   LobbyTooSmall,
+}
+
 #[derive(Deserialize)]
 pub(crate) enum PalaceInMessage {
    NewLobby(NewLobbyMessage),
@@ -159,6 +174,7 @@ pub(crate) enum PalaceInMessage {
    ChooseFaceup(ChooseFaceupMessage),
    MakePlay(MakePlayMessage),
    Reconnect(ReconnectMessage),
+   RequestAi(RequestAiMessage),
 }
 
 #[derive(Serialize)]
@@ -167,10 +183,12 @@ pub(crate) enum PalaceOutMessage<'a> {
    JoinLobbyResponse(Result<JoinLobbyResponse<'a>, JoinLobbyError>),
    ListLobbiesResponse(&'a [LobbyDisplay<'a>]),
    StartGameResponse(Result<(), StartGameError>),
-   ChooseFaceupResponse(Result<HandResponse<'a>, ChooseFaceupError>),
-   MakePlayResponse(Result<HandResponse<'a>, MakePlayError>),
+   ChooseFaceupResponse(Result<(), ChooseFaceupError>),
+   MakePlayResponse(Result<(), MakePlayError>),
    ReconnectResponse(Result<(), ReconnectError>),
+   RequestAiResponse(Result<(), RequestAiError>),
    PublicGameStateEvent(&'a PublicGameState<'a>),
-   GameStartedEvent(GameStartedEvent<'a>),
+   HandEvent(HandEvent<'a>),
+   GameStartEvent(GameStartEvent<'a>),
    PlayerJoinEvent(PlayerJoinEvent<'a>),
 }
