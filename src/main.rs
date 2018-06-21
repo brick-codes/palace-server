@@ -871,6 +871,7 @@ mod test {
          std::thread::spawn(move || {
             run_server("127.0.0.1:3013");
          });
+         // TODO ideally this would be a retry ready check
          std::thread::sleep(std::time::Duration::from_secs(5));
          *server_up = true
       }
@@ -923,7 +924,7 @@ mod test {
          tc.send(TestOutMessage::NewLobby(TestNewLobbyMessage {
             player_name: "TestClient".into(),
             lobby_name: "TestLobby".into(),
-            password: "eggs".into(),
+            password: "foo".into(),
             max_players: 4,
          }));
          let nlr = tc.get();

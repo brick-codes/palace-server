@@ -404,7 +404,7 @@ mod test {
    }
 
    #[test]
-   fn test_tens_clear_pile_no_rotate() {
+   fn test_ten_clears_no_rotate() {
       let mut game = GameState::new_game_skip_setup(4);
       assert!(game.play_card(CardValue::Three).is_ok());
       assert_eq!(game.pile_cards.len(), 1);
