@@ -147,14 +147,16 @@ fn ai_play_loop(lobbies: &Arc<RwLock<HashMap<LobbyId, Lobby>>>) {
                         }
                      }
                      game::GamePhase::Play => {
-                        let play = if gs.hands[gs.active_player as usize].is_empty() && gs.face_up_three[gs.active_player as usize].is_empty() {
+                        let play = if gs.hands[gs.active_player as usize].is_empty()
+                           && gs.face_up_three[gs.active_player as usize].is_empty()
+                        {
                            vec![].into_boxed_slice()
                         } else {
                            match lobby.players.get_mut(player_id).unwrap().connection {
                               Connection::Ai(ref mut ai) => ai.take_turn(),
                               _ => unreachable!(),
                            }
-                        }; 
+                        };
                         match gs.make_play(play) {
                            Ok(()) => {
                               let public_gs = gs.public_state();
@@ -316,11 +318,15 @@ impl Server {
             for _ in 0..message.num_ai {
                let player_id = PlayerId(rand::random());
                let mut ai: Box<PalaceAi + Send + Sync> = Box::new(ai::random::new());
-               add_player(Player {
-                  name: ai.player_name(),
-                  connection: Connection::Ai(ai),
-                  turn_number: 0,
-               }, player_id, lobby);
+               add_player(
+                  Player {
+                     name: ai.player_name(),
+                     connection: Connection::Ai(ai),
+                     turn_number: 0,
+                  },
+                  player_id,
+                  lobby,
+               );
             }
             Ok(())
          }
@@ -400,11 +406,15 @@ impl Server {
             })),
          );
 
-         add_player(Player {
-            name: message.player_name,
-            connection: Connection::Connected(self.out.clone()),
-            turn_number: 0,
-         }, player_id, lobby);
+         add_player(
+            Player {
+               name: message.player_name,
+               connection: Connection::Connected(self.out.clone()),
+               turn_number: 0,
+            },
+            player_id,
+            lobby,
+         );
 
          self.connected_lobby_player = Some((message.lobby_id, player_id));
 
@@ -603,10 +613,7 @@ impl Server {
 fn add_player(new_player: Player, player_id: PlayerId, lobby: &mut Lobby) {
    let new_player_name = new_player.name.clone();
 
-   lobby.players.insert(
-      player_id,
-      new_player,
-   );
+   lobby.players.insert(player_id, new_player);
 
    let new_num_players = lobby.players.len() as u8;
    for (id, player) in &mut lobby.players {
@@ -906,9 +913,7 @@ mod test {
          tc.send(TestOutMessage::ListLobbies);
          let llr = tc.get();
          match llr {
-            TestInMessage::ListLobbiesResponse(r) => {
-               assert!(r.iter().find(|x| x.name == "JunkLobby").is_none())
-            }
+            TestInMessage::ListLobbiesResponse(r) => assert!(r.iter().find(|x| x.name == "JunkLobby").is_none()),
             _ => panic!("Expected list lobbies response"),
          }
       }
@@ -932,7 +937,7 @@ mod test {
             TestInMessage::NewLobbyResponse(r) => {
                let inner = r.expect("New lobby failed");
                (inner.player_id, inner.lobby_id)
-            },
+            }
             _ => panic!("Expected new lobby response"),
          }
       };
@@ -948,13 +953,13 @@ mod test {
          for _ in 0..3 {
             match tc.get() {
                TestInMessage::PlayerJoinEvent(_) => (),
-               _ => panic!("Expected PlayerJoinEvent")
+               _ => panic!("Expected PlayerJoinEvent"),
             }
          }
          // Ensure the AI response is OK
          match tc.get() {
             TestInMessage::RequestAiResponse(r) => assert!(r.is_ok()),
-            _ => panic!("Expected RequestAiResponse")
+            _ => panic!("Expected RequestAiResponse"),
          }
       }
    }
