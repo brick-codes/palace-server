@@ -10,6 +10,9 @@ extern crate serde;
 extern crate serde_json;
 extern crate ws;
 
+#[cfg(test)]
+extern crate parking_lot;
+
 mod ai;
 mod data;
 mod game;
@@ -265,7 +268,7 @@ impl Server {
             // This is an unfortunate special case,
             // we can't (efficiently) delay sending the join lobby response until the end of the message
             // so on the Ok path the JoinLobbyResposne has already been sent
-            match self.do_join_lobby(&message) {
+            match self.do_join_lobby(message) {
                Ok(()) => Ok(()),
                Err(e) => serialize_and_send(&mut self.out, &PalaceOutMessage::JoinLobbyResponse(Err(e))),
             }
@@ -313,14 +316,11 @@ impl Server {
             for _ in 0..message.num_ai {
                let player_id = PlayerId(rand::random());
                let mut ai: Box<PalaceAi + Send + Sync> = Box::new(ai::random::new());
-               lobby.players.insert(
-                  player_id,
-                  Player {
-                     turn_number: 0,
-                     name: ai.player_name(),
-                     connection: Connection::Ai(ai),
-                  },
-               );
+               add_player(Player {
+                  name: ai.player_name(),
+                  connection: Connection::Ai(ai),
+                  turn_number: 0,
+               }, player_id, lobby);
             }
             Ok(())
          }
@@ -371,7 +371,7 @@ impl Server {
       Ok(NewLobbyResponse { player_id, lobby_id })
    }
 
-   fn do_join_lobby(&mut self, message: &JoinLobbyMessage) -> Result<(), JoinLobbyError> {
+   fn do_join_lobby(&mut self, message: JoinLobbyMessage) -> Result<(), JoinLobbyError> {
       if message.player_name.is_empty() {
          return Err(JoinLobbyError::EmptyPlayerName);
       }
@@ -400,35 +400,13 @@ impl Server {
             })),
          );
 
-         lobby.players.insert(
-            player_id,
-            Player {
-               name: message.player_name.clone(),
-               connection: Connection::Connected(self.out.clone()),
-               turn_number: 0,
-            },
-         );
-         self.connected_lobby_player = Some((message.lobby_id, player_id));
+         add_player(Player {
+            name: message.player_name,
+            connection: Connection::Connected(self.out.clone()),
+            turn_number: 0,
+         }, player_id, lobby);
 
-         let new_num_players = lobby.players.len() as u8;
-         for (id, player) in &mut lobby.players {
-            if *id == player_id {
-               continue;
-            }
-            match player.connection {
-               Connection::Connected(ref mut sender) => {
-                  let _ = serialize_and_send(
-                     sender,
-                     &PalaceOutMessage::PlayerJoinEvent(PlayerJoinEvent {
-                        total_num_players: new_num_players,
-                        new_player_name: &message.player_name,
-                     }),
-                  );
-               }
-               Connection::Disconnected(_) => (),
-               Connection::Ai(_) => unreachable!(),
-            }
-         }
+         self.connected_lobby_player = Some((message.lobby_id, player_id));
 
          Ok(())
       } else {
@@ -622,6 +600,35 @@ impl Server {
    }
 }
 
+fn add_player(new_player: Player, player_id: PlayerId, lobby: &mut Lobby) {
+   let new_player_name = new_player.name.clone();
+
+   lobby.players.insert(
+      player_id,
+      new_player,
+   );
+
+   let new_num_players = lobby.players.len() as u8;
+   for (id, player) in &mut lobby.players {
+      if *id == player_id {
+         continue;
+      }
+      match player.connection {
+         Connection::Connected(ref mut sender) => {
+            let _ = serialize_and_send(
+               sender,
+               &PalaceOutMessage::PlayerJoinEvent(PlayerJoinEvent {
+                  total_num_players: new_num_players,
+                  new_player_name: &new_player_name,
+               }),
+            );
+         }
+         Connection::Disconnected(_) => (),
+         Connection::Ai(_) => (),
+      }
+   }
+}
+
 fn serialize_and_send(s: &mut Sender, message: &PalaceOutMessage) -> ws::Result<()> {
    match serde_json::to_vec(message) {
       Ok(bytes) => {
@@ -692,7 +699,10 @@ mod test {
    use super::*;
 
    #[cfg(test)]
-   use std::sync::{mpsc, Mutex};
+   use std::sync::mpsc;
+
+   #[cfg(test)]
+   use parking_lot::Mutex;
 
    #[cfg(test)]
    #[derive(Deserialize)]
@@ -710,12 +720,12 @@ mod test {
    #[cfg(test)]
    #[derive(Deserialize)]
    struct TestNewLobbyResponse {
-      player_id: PlayerId,
-      lobby_id: LobbyId,
+      player_id: String,
+      lobby_id: String,
    }
 
    #[cfg(test)]
-   #[derive(Deserialize)]
+   #[derive(Debug, Deserialize)]
    enum TestNewLobbyError {
       LessThanTwoMaxPlayers,
       EmptyLobbyName,
@@ -724,9 +734,27 @@ mod test {
 
    #[cfg(test)]
    #[derive(Deserialize)]
+   struct PlayerJoinEvent {
+      pub total_num_players: u8,
+      pub new_player_name: String,
+   }
+
+   #[derive(Deserialize)]
+   #[cfg(test)]
+   enum RequestAiError {
+      NotLobbyOwner,
+      LessThanOneAiRequested,
+      LobbyNotFound,
+      LobbyTooSmall,
+   }
+
+   #[cfg(test)]
+   #[derive(Deserialize)]
    enum TestInMessage {
       ListLobbiesResponse(Box<[TestLobbyDisplay]>),
       NewLobbyResponse(Result<TestNewLobbyResponse, TestNewLobbyError>),
+      PlayerJoinEvent(PlayerJoinEvent),
+      RequestAiResponse(Result<(), RequestAiError>),
    }
 
    #[cfg(test)]
@@ -740,8 +768,17 @@ mod test {
 
    #[cfg(test)]
    #[derive(Serialize)]
+   struct TestRequestAiMessage {
+      pub lobby_id: String,
+      pub player_id: String,
+      pub num_ai: u8,
+   }
+
+   #[cfg(test)]
+   #[derive(Serialize)]
    enum TestOutMessage {
       NewLobby(TestNewLobbyMessage),
+      RequestAi(TestRequestAiMessage),
       ListLobbies,
    }
 
@@ -760,7 +797,7 @@ mod test {
 
       fn on_timeout(&mut self, event: ws::util::Token) -> ws::Result<()> {
          if event == ws::util::Token(1) {
-            if let Ok(bytes) = self.to_send_messages.lock().unwrap().try_recv() {
+            if let Ok(bytes) = self.to_send_messages.lock().try_recv() {
                self.out.send(bytes).unwrap();
             }
             self.out.timeout(100, ws::util::Token(1))
@@ -824,29 +861,38 @@ mod test {
       }
    }
 
+   #[cfg(test)]
+   static SERVER_UP: Mutex<bool> = Mutex::new(false);
+
+   #[cfg(test)]
+   fn ensure_test_server_up() {
+      let mut server_up = SERVER_UP.lock();
+      if !*server_up {
+         std::thread::spawn(move || {
+            run_server("127.0.0.1:3013");
+         });
+         std::thread::sleep(std::time::Duration::from_secs(5));
+         *server_up = true
+      }
+   }
+
    #[test]
    fn test_lobbies_clean_up() {
-      std::thread::spawn(move || {
-         run_server("127.0.0.1:3013");
-      });
-
-      // Wait for server to be ready
-      // TODO: could do this better with a retry loop or something
-      std::thread::sleep(std::time::Duration::from_secs(5));
+      ensure_test_server_up();
 
       // Create a lobby
       {
          let mut tc = TestClient::new();
          tc.send(TestOutMessage::NewLobby(TestNewLobbyMessage {
             player_name: "TestClient".into(),
-            lobby_name: "TestLobby".into(),
+            lobby_name: "JunkLobby".into(),
             password: "".into(),
             max_players: 4,
          }));
          let nlr = tc.get();
          match nlr {
             TestInMessage::NewLobbyResponse(r) => assert!(r.is_ok()),
-            _ => assert!(false),
+            _ => panic!("Expected new lobby response"),
          }
          tc.disconnect();
       }
@@ -860,14 +906,55 @@ mod test {
          let llr = tc.get();
          match llr {
             TestInMessage::ListLobbiesResponse(r) => {
-               assert!(r.is_empty());
+               assert!(r.iter().find(|x| x.name == "JunkLobby").is_none())
             }
-            _ => assert!(false),
+            _ => panic!("Expected list lobbies response"),
          }
-         tc.disconnect(); // TEMP see below
       }
+   }
 
-      // TEMP why do we need this?? test passes but annoying error after the test run
-      std::thread::sleep(std::time::Duration::from_secs(5))
+   #[test]
+   fn test_bots_join_lobby_after_request() {
+      ensure_test_server_up();
+
+      let mut tc = TestClient::new();
+      // Create a lobby
+      let (player_id, lobby_id) = {
+         tc.send(TestOutMessage::NewLobby(TestNewLobbyMessage {
+            player_name: "TestClient".into(),
+            lobby_name: "TestLobby".into(),
+            password: "eggs".into(),
+            max_players: 4,
+         }));
+         let nlr = tc.get();
+         match nlr {
+            TestInMessage::NewLobbyResponse(r) => {
+               let inner = r.expect("New lobby failed");
+               (inner.player_id, inner.lobby_id)
+            },
+            _ => panic!("Expected new lobby response"),
+         }
+      };
+
+      // Request 3 AI
+      {
+         tc.send(TestOutMessage::RequestAi(TestRequestAiMessage {
+            num_ai: 3,
+            player_id: player_id,
+            lobby_id: lobby_id,
+         }));
+         // Ensure that three AI join
+         for _ in 0..3 {
+            match tc.get() {
+               TestInMessage::PlayerJoinEvent(_) => (),
+               _ => panic!("Expected PlayerJoinEvent")
+            }
+         }
+         // Ensure the AI response is OK
+         match tc.get() {
+            TestInMessage::RequestAiResponse(r) => assert!(r.is_ok()),
+            _ => panic!("Expected RequestAiResponse")
+         }
+      }
    }
 }

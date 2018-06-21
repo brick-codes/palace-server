@@ -12,5 +12,9 @@ serde_derive = "1"
 serde_json = "1"
 ws = { git = "https://github.com/housleyjk/ws-rs" }
 
+[dev-dependencies]
+parking_lot = {version = "0.6", features = ["nightly"]}
+
+
 [profile.release]
 lto = true
