@@ -66,7 +66,7 @@ struct Lobby {
 enum Connection {
    Connected(ws::Sender),
    Disconnected(Instant),
-   Ai(Box<PalaceAi + Send + Sync>),
+   Ai(Box<dyn PalaceAi + Send + Sync>),
 }
 
 struct Player {
@@ -187,7 +187,15 @@ fn ai_play_loop(lobbies: &Arc<RwLock<HashMap<LobbyId, Lobby>>>) {
                               }
                            }
                            Err(_) => {
-                              error!("Bot failed to make play");
+                              match lobby.players.get_mut(player_id).unwrap().connection {
+                                 Connection::Ai(ref mut ai) => {
+                                    error!("Bot (strategy: {}) failed to make play", ai.strategy_name())
+                                 }
+                                 _ => unreachable!(),
+                              }
+                              // TODO: in future, if this occurs we should swap out the bot
+                              // strategy (default to something like random)
+                              // to try and let the game proceed
                            }
                         }
                      }
@@ -320,7 +328,7 @@ impl Server {
                let mut ai: Box<PalaceAi + Send + Sync> = Box::new(ai::random::new());
                add_player(
                   Player {
-                     name: ai.player_name(),
+                     name: ai.strategy_name().into(),
                      connection: Connection::Ai(ai),
                      turn_number: 0,
                   },

@@ -19,8 +19,8 @@ pub fn new() -> RandomAi {
 }
 
 impl PalaceAi for RandomAi {
-   fn player_name(&mut self) -> String {
-      "Randy".into()
+   fn strategy_name(&self) -> &'static str {
+      "Randy"
    }
 
    fn choose_three_faceup(&mut self) -> (Card, Card, Card) {

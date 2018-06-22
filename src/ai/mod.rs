@@ -4,9 +4,8 @@ use game::{Card, PublicGameState};
 pub mod random;
 
 pub(crate) trait PalaceAi {
-   fn player_name(&mut self) -> String {
-      "BOT".into()
-   }
+   // Could be associated const if we stop using trait object
+   fn strategy_name(&self) -> &'static str;
 
    fn choose_three_faceup(&mut self) -> (Card, Card, Card);
 
