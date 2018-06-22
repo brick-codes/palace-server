@@ -5,15 +5,15 @@ use game::{Card, PublicGameState};
 use rand::{self, Rng};
 
 pub struct RandomAi {
-   hand: Box<[Card]>,
-   faceup_cards: Box<[Card]>,
+   hand: Vec<Card>,
+   faceup_cards: Vec<Card>,
    turn_number: u8,
 }
 
 pub fn new() -> RandomAi {
    RandomAi {
-      hand: vec![].into_boxed_slice(),
-      faceup_cards: vec![].into_boxed_slice(),
+      hand: vec![],
+      faceup_cards: vec![],
       turn_number: 0,
    }
 }
@@ -36,15 +36,17 @@ impl PalaceAi for RandomAi {
    }
 
    fn on_game_state_update(&mut self, new_state: &PublicGameState) {
-      self.faceup_cards = new_state.face_up_three[self.turn_number as usize].into();
+      self.faceup_cards.clear();
+      self.faceup_cards.extend_from_slice(new_state.face_up_three[self.turn_number as usize]);
    }
 
    fn on_game_start(&mut self, game_start_event: GameStartEvent) {
-      self.hand = game_start_event.hand.into();
+      self.hand.extend_from_slice(game_start_event.hand);
       self.turn_number = game_start_event.turn_number;
    }
 
    fn on_hand_update(&mut self, new_hand: &[Card]) {
-      self.hand = new_hand.into();
+      self.hand.clear();
+      self.hand.extend_from_slice(new_hand);
    }
 }
