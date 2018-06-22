@@ -1,8 +1,10 @@
 #![feature(vec_remove_item)]
 
-extern crate pretty_env_logger;
+#[macro_use]
+extern crate lazy_static;
 #[macro_use]
 extern crate log;
+extern crate pretty_env_logger;
 extern crate rand;
 #[macro_use]
 extern crate serde_derive;
@@ -328,7 +330,7 @@ impl Server {
                let mut ai: Box<PalaceAi + Send + Sync> = Box::new(ai::random::new());
                add_player(
                   Player {
-                     name: ai.strategy_name().into(),
+                     name: ai::get_bot_name(),
                      connection: Connection::Ai(ai),
                      turn_number: 0,
                   },
@@ -395,7 +397,7 @@ impl Server {
          self.connected_lobby_player = Some((lobby_id, player_id));
       }
 
-      Ok(NewLobbyResponse { player_id, lobby_id })
+      Ok(NewLobbyResponse { player_id, lobby_id, max_players: message.max_players })
    }
 
    fn do_join_lobby(&mut self, message: JoinLobbyMessage) -> Result<(), JoinLobbyError> {
@@ -424,6 +426,7 @@ impl Server {
             &PalaceOutMessage::JoinLobbyResponse(Ok(JoinLobbyResponse {
                player_id,
                lobby_players: lobby.players.values().map(|x| x.name.as_ref()).collect(),
+               max_players: lobby.max_players,
             })),
          );
 

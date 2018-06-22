@@ -37,7 +37,9 @@ impl PalaceAi for RandomAi {
 
    fn on_game_state_update(&mut self, new_state: &PublicGameState) {
       self.faceup_cards.clear();
-      self.faceup_cards.extend_from_slice(new_state.face_up_three[self.turn_number as usize]);
+      self
+         .faceup_cards
+         .extend_from_slice(new_state.face_up_three[self.turn_number as usize]);
    }
 
    fn on_game_start(&mut self, game_start_event: GameStartEvent) {

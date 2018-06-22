@@ -42,6 +42,7 @@ pub(crate) struct NewLobbyMessage {
 pub(crate) struct NewLobbyResponse {
    pub player_id: PlayerId,
    pub lobby_id: LobbyId,
+   pub max_players: u8,
 }
 
 #[derive(Debug, Serialize)]
@@ -62,6 +63,7 @@ pub(crate) struct JoinLobbyMessage {
 pub(crate) struct JoinLobbyResponse<'a> {
    pub player_id: PlayerId,
    pub lobby_players: Vec<&'a str>,
+   pub max_players: u8,
 }
 
 #[derive(Serialize)]
