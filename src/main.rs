@@ -373,7 +373,20 @@ impl Server {
             creation_time: Instant::now(),
          },
       );
-      self.connected_lobby_player = Some((lobby_id, player_id));
+
+      // Update connected player info
+      {
+         if let Some((old_lobby_id, old_player_id)) = self.connected_lobby_player {
+            if let Some(old_lobby) = lobbies.get_mut(&old_lobby_id) {
+               if let Some(old_player) = old_lobby.players.get_mut(&old_player_id) {
+                  old_player.connection = Connection::Disconnected(Instant::now());
+               }
+            }
+         }
+
+         self.connected_lobby_player = Some((lobby_id, player_id));
+      }
+
       Ok(NewLobbyResponse { player_id, lobby_id })
    }
 
@@ -383,7 +396,7 @@ impl Server {
       }
 
       let mut lobbies = self.lobbies.write().unwrap();
-      if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
+      let new_player_id = if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
          if lobby.game.is_some() {
             return Err(JoinLobbyError::GameInProgress);
          }
@@ -416,12 +429,25 @@ impl Server {
             lobby,
          );
 
-         self.connected_lobby_player = Some((message.lobby_id, player_id));
-
-         Ok(())
+         player_id
       } else {
-         Err(JoinLobbyError::LobbyNotFound)
+         return Err(JoinLobbyError::LobbyNotFound);
+      };
+
+      // Update connected player info
+      {
+         if let Some((old_lobby_id, old_player_id)) = self.connected_lobby_player {
+            if let Some(old_lobby) = lobbies.get_mut(&old_lobby_id) {
+               if let Some(old_player) = old_lobby.players.get_mut(&old_player_id) {
+                  old_player.connection = Connection::Disconnected(Instant::now());
+               }
+            }
+         }
+
+         self.connected_lobby_player = Some((message.lobby_id, new_player_id));
       }
+
+      Ok(())
    }
 
    fn do_start_game(&mut self, message: StartGameMessage) -> Result<(), StartGameError> {
