@@ -80,7 +80,6 @@ struct Player {
 struct Server {
    out: Sender,
    lobbies: Arc<RwLock<HashMap<LobbyId, Lobby>>>,
-   // TODO: investigate a global hashmap of Sender(id?) -> (LobbyId, PlayerId) for this instead of storing this per socket
    connected_lobby_player: Option<(LobbyId, PlayerId)>,
 }
 
@@ -121,6 +120,10 @@ fn ai_play_loop(lobbies: &Arc<RwLock<HashMap<LobbyId, Lobby>>>) {
                               report_choose_faceup(&gs, &mut lobby.players, *player_id);
                            }
                            Err(_) => {
+                              let mut players = HashMap::new();
+                              for player in lobby.players.values() {
+                                 players.insert(player.turn_number, player.name.clone());
+                              }
                               let player = lobby.players.get_mut(player_id).unwrap();
                               match player.connection {
                                  Connection::Ai(ref mut ai) => {
@@ -131,7 +134,7 @@ fn ai_play_loop(lobbies: &Arc<RwLock<HashMap<LobbyId, Lobby>>>) {
                                        ai.on_game_start(GameStartEvent {
                                           hand: gs.get_hand(player.turn_number),
                                           turn_number: player.turn_number,
-                                          players: &HashMap::new(), // TODO: fill this
+                                          players: &players,
                                        });
                                        ai.on_game_state_update(&gs.public_state());
                                     }
@@ -157,6 +160,10 @@ fn ai_play_loop(lobbies: &Arc<RwLock<HashMap<LobbyId, Lobby>>>) {
                               report_make_play(&gs, &mut lobby.players, *player_id);
                            }
                            Err(_) => {
+                              let mut players = HashMap::new();
+                              for player in lobby.players.values() {
+                                 players.insert(player.turn_number, player.name.clone());
+                              }
                               let player = lobby.players.get_mut(player_id).unwrap();
                               match player.connection {
                                  Connection::Ai(ref mut ai) => {
@@ -167,7 +174,7 @@ fn ai_play_loop(lobbies: &Arc<RwLock<HashMap<LobbyId, Lobby>>>) {
                                        ai.on_game_start(GameStartEvent {
                                           hand: gs.get_hand(player.turn_number),
                                           turn_number: player.turn_number,
-                                          players: &HashMap::new(), // TODO: fill this
+                                          players: &players,
                                        });
                                        ai.on_game_state_update(&gs.public_state());
                                     }
@@ -226,7 +233,7 @@ impl Handler for Server {
    fn on_close(&mut self, _code: CloseCode, _reason: &str) {
       debug!("A connection closed");
       let mut lobbies = self.lobbies.write().unwrap();
-      disconnect_old_player(&mut self.connected_lobby_player, &mut lobbies);
+      disconnect_old_player(&self.connected_lobby_player, &mut lobbies);
    }
 
    fn on_open(&mut self, _: Handshake) -> ws::Result<()> {
