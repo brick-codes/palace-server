@@ -120,16 +120,25 @@ fn ai_play_loop(lobbies: &Arc<RwLock<HashMap<LobbyId, Lobby>>>) {
                            Ok(()) => {
                               report_choose_faceup(&gs, &mut lobby.players, *player_id);
                            }
-                           Err(_) => match lobby.players.get_mut(player_id).unwrap().connection {
-                              Connection::Ai(ref mut ai) => {
-                                 error!("Bot (strategy: {}) failed to choose three faceup", ai.strategy_name());
-                                 if ai.strategy_name() != "Random" {
-                                    info!("Falling back to Random");
-                                    *ai = Box::new(ai::random::new());
+                           Err(_) => {
+                              let player = lobby.players.get_mut(player_id).unwrap();
+                              match player.connection {
+                                 Connection::Ai(ref mut ai) => {
+                                    error!("Bot (strategy: {}) failed to choose three faceup", ai.strategy_name());
+                                    if ai.strategy_name() != "Random" {
+                                       info!("Falling back to Random");
+                                       *ai = Box::new(ai::random::new());
+                                       ai.on_game_start(GameStartEvent {
+                                          hand: gs.get_hand(player.turn_number),
+                                          turn_number: player.turn_number,
+                                          players: &HashMap::new(), // TODO: fill this
+                                       });
+                                       ai.on_game_state_update(&gs.public_state());
+                                    }
                                  }
+                                 _ => unreachable!(),
                               }
-                              _ => unreachable!(),
-                           },
+                           }
                         }
                      }
                      game::GamePhase::Play => {
@@ -147,16 +156,25 @@ fn ai_play_loop(lobbies: &Arc<RwLock<HashMap<LobbyId, Lobby>>>) {
                            Ok(()) => {
                               report_make_play(&gs, &mut lobby.players, *player_id);
                            }
-                           Err(_) => match lobby.players.get_mut(player_id).unwrap().connection {
-                              Connection::Ai(ref mut ai) => {
-                                 error!("Bot (strategy: {}) failed to make play", ai.strategy_name());
-                                 if ai.strategy_name() != "Random" {
-                                    info!("Falling back to Random");
-                                    *ai = Box::new(ai::random::new());
+                           Err(_) => {
+                              let player = lobby.players.get_mut(player_id).unwrap();
+                              match player.connection {
+                                 Connection::Ai(ref mut ai) => {
+                                    error!("Bot (strategy: {}) failed to make play", ai.strategy_name());
+                                    if ai.strategy_name() != "Random" {
+                                       info!("Falling back to Random");
+                                       *ai = Box::new(ai::random::new());
+                                       ai.on_game_start(GameStartEvent {
+                                          hand: gs.get_hand(player.turn_number),
+                                          turn_number: player.turn_number,
+                                          players: &HashMap::new(), // TODO: fill this
+                                       });
+                                       ai.on_game_state_update(&gs.public_state());
+                                    }
                                  }
+                                 _ => unreachable!(),
                               }
-                              _ => unreachable!(),
-                           },
+                           }
                         }
                      }
                      game::GamePhase::Complete => {
@@ -750,14 +768,7 @@ mod test {
    #[cfg(test)]
    #[derive(Deserialize)]
    struct TestLobbyDisplay {
-      cur_players: u8,
-      max_players: u8,
-      started: bool,
-      has_password: bool,
-      owner: String,
       name: String,
-      age: u64,
-      lobby_id: String,
    }
 
    #[cfg(test)]
