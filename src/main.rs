@@ -118,34 +118,19 @@ fn ai_play_loop(lobbies: &Arc<RwLock<HashMap<LobbyId, Lobby>>>) {
                         };
                         match gs.choose_three_faceup(faceup_three.0, faceup_three.1, faceup_three.2) {
                            Ok(()) => {
-                              let public_gs = gs.public_state();
-                              for (id, player) in &mut lobby.players {
-                                 match player.connection {
-                                    Connection::Connected(ref mut sender) => {
-                                       if id == player_id {
-                                          let _ = serialize_and_send(
-                                             sender,
-                                             &PalaceOutMessage::HandEvent(HandEvent {
-                                                hand: gs.get_hand(player.turn_number),
-                                             }),
-                                          );
-                                       }
-                                       let _ = serialize_and_send(
-                                          sender,
-                                          &PalaceOutMessage::PublicGameStateEvent(&public_gs),
-                                       );
-                                    }
-                                    Connection::Disconnected(_) => (),
-                                    Connection::Ai(ref mut ai) => {
-                                       if id == player_id {
-                                          ai.on_hand_update(gs.get_hand(player.turn_number));
-                                       }
-                                       ai.on_game_state_update(&public_gs);
-                                    }
-                                 }
-                              }
+                              report_choose_faceup(&gs, &mut lobby.players, *player_id);
                            }
-                           Err(_) => error!("Bot failed to choose three faceup"),
+                           Err(_) => {
+                              match lobby.players.get_mut(player_id).unwrap().connection {
+                                 Connection::Ai(ref mut ai) => {
+                                    error!("Bot (strategy: {}) failed to choose three faceup", ai.strategy_name())
+                                 }
+                                 _ => unreachable!(),
+                              }
+                              // TODO: in future, if this occurs we should swap out the bot
+                              // strategy (default to something like random)
+                              // to try and let the game proceed
+                           }
                         }
                      }
                      game::GamePhase::Play => {
@@ -161,32 +146,7 @@ fn ai_play_loop(lobbies: &Arc<RwLock<HashMap<LobbyId, Lobby>>>) {
                         };
                         match gs.make_play(play) {
                            Ok(()) => {
-                              let public_gs = gs.public_state();
-                              for (id, player) in &mut lobby.players {
-                                 match player.connection {
-                                    Connection::Connected(ref mut sender) => {
-                                       if id == player_id {
-                                          let _ = serialize_and_send(
-                                             sender,
-                                             &PalaceOutMessage::HandEvent(HandEvent {
-                                                hand: gs.get_hand(player.turn_number),
-                                             }),
-                                          );
-                                       }
-                                       let _ = serialize_and_send(
-                                          sender,
-                                          &PalaceOutMessage::PublicGameStateEvent(&public_gs),
-                                       );
-                                    }
-                                    Connection::Disconnected(_) => (),
-                                    Connection::Ai(ref mut ai) => {
-                                       if id == player_id {
-                                          ai.on_hand_update(gs.get_hand(player.turn_number));
-                                       }
-                                       ai.on_game_state_update(&public_gs);
-                                    }
-                                 }
-                              }
+                              report_make_play(&gs, &mut lobby.players, *player_id);
                            }
                            Err(_) => {
                               match lobby.players.get_mut(player_id).unwrap().connection {
@@ -327,7 +287,7 @@ impl Server {
          } else {
             for _ in 0..message.num_ai {
                let player_id = PlayerId(rand::random());
-               let mut ai: Box<PalaceAi + Send + Sync> = Box::new(ai::random::new());
+               let ai: Box<PalaceAi + Send + Sync> = Box::new(ai::random::new());
                add_player(
                   Player {
                      name: ai::get_bot_name(),
@@ -546,30 +506,7 @@ impl Server {
 
             match result {
                Ok(()) => {
-                  let public_gs = gs.public_state();
-                  for (id, player) in &mut lobby.players {
-                     match player.connection {
-                        Connection::Connected(ref mut sender) => {
-                           if *id == message.player_id {
-                              let _ = serialize_and_send(
-                                 sender,
-                                 &PalaceOutMessage::HandEvent(HandEvent {
-                                    hand: gs.get_hand(player.turn_number),
-                                 }),
-                              );
-                           }
-                           let _ = serialize_and_send(sender, &PalaceOutMessage::PublicGameStateEvent(&public_gs));
-                        }
-                        Connection::Disconnected(_) => (),
-                        Connection::Ai(ref mut ai) => {
-                           if *id == message.player_id {
-                              ai.on_hand_update(gs.get_hand(player.turn_number));
-                           }
-                           ai.on_game_state_update(&public_gs);
-                        }
-                     }
-                  }
-
+                  report_choose_faceup(&gs, &mut lobby.players, message.player_id);
                   Ok(())
                }
                Err(e) => Err(ChooseFaceupError::GameError(e)),
@@ -598,30 +535,7 @@ impl Server {
 
             match result {
                Ok(()) => {
-                  let public_gs = gs.public_state();
-                  for (id, player) in &mut lobby.players {
-                     match player.connection {
-                        Connection::Connected(ref mut sender) => {
-                           if *id == message.player_id {
-                              let _ = serialize_and_send(
-                                 sender,
-                                 &PalaceOutMessage::HandEvent(HandEvent {
-                                    hand: gs.get_hand(player.turn_number),
-                                 }),
-                              );
-                           }
-                           let _ = serialize_and_send(sender, &PalaceOutMessage::PublicGameStateEvent(&public_gs));
-                        }
-                        Connection::Disconnected(_) => (),
-                        Connection::Ai(ref mut ai) => {
-                           if *id == message.player_id {
-                              ai.on_hand_update(gs.get_hand(player.turn_number));
-                           }
-                           ai.on_game_state_update(&public_gs);
-                        }
-                     }
-                  }
-
+                  report_make_play(&gs, &mut lobby.players, message.player_id);
                   Ok(())
                }
                Err(e) => Err(MakePlayError::GameError(e)),
@@ -659,6 +573,58 @@ impl Server {
          }
       } else {
          Err(ReconnectError::LobbyNotFound)
+      }
+   }
+}
+
+fn report_make_play(gs: &GameState, players: &mut HashMap<PlayerId, Player>, id_of_last_player: PlayerId) {
+   let public_gs = gs.public_state();
+   for (id, player) in players {
+      match player.connection {
+         Connection::Connected(ref mut sender) => {
+            if *id == id_of_last_player {
+               let _ = serialize_and_send(
+                  sender,
+                  &PalaceOutMessage::HandEvent(HandEvent {
+                     hand: gs.get_hand(player.turn_number),
+                  }),
+               );
+            }
+            let _ = serialize_and_send(sender, &PalaceOutMessage::PublicGameStateEvent(&public_gs));
+         }
+         Connection::Disconnected(_) => (),
+         Connection::Ai(ref mut ai) => {
+            if *id == id_of_last_player {
+               ai.on_hand_update(gs.get_hand(player.turn_number));
+            }
+            ai.on_game_state_update(&public_gs);
+         }
+      }
+   }
+}
+
+fn report_choose_faceup(gs: &GameState, players: &mut HashMap<PlayerId, Player>, id_of_last_player: PlayerId) {
+   let public_gs = gs.public_state();
+   for (id, player) in players {
+      match player.connection {
+         Connection::Connected(ref mut sender) => {
+            if *id == id_of_last_player {
+               let _ = serialize_and_send(
+                  sender,
+                  &PalaceOutMessage::HandEvent(HandEvent {
+                     hand: gs.get_hand(player.turn_number),
+                  }),
+               );
+            }
+            let _ = serialize_and_send(sender, &PalaceOutMessage::PublicGameStateEvent(&public_gs));
+         }
+         Connection::Disconnected(_) => (),
+         Connection::Ai(ref mut ai) => {
+            if *id == id_of_last_player {
+               ai.on_hand_update(gs.get_hand(player.turn_number));
+            }
+            ai.on_game_state_update(&public_gs);
+         }
       }
    }
 }
