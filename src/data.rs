@@ -1,5 +1,6 @@
 use game::{Card, PublicGameState};
 use {Lobby, LobbyId, PlayerId};
+use std::collections::HashMap;
 
 impl Lobby {
    pub(crate) fn display(&self, lobby_id: &LobbyId) -> LobbyDisplay {
@@ -106,6 +107,7 @@ pub(crate) struct HandEvent<'a> {
 pub(crate) struct GameStartEvent<'a> {
    pub hand: &'a [Card],
    pub turn_number: u8,
+   pub players: &'a HashMap<u8, String>,
 }
 
 #[derive(Serialize)]

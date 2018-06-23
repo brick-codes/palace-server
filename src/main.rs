@@ -429,11 +429,25 @@ impl Server {
          lobby.game = Some(gs);
 
          let public_gs = lobby.game.as_ref().unwrap().public_state();
+
          let mut turn_numbers: Vec<u8> = (0..num_players).collect();
          rand::thread_rng().shuffle(&mut turn_numbers);
          let mut turn_numbers = turn_numbers.into_iter();
-         for (id, player) in &mut lobby.players {
+
+         let mut players = HashMap::new();
+         // Assign everyone turn numbers
+         for player in lobby.players.values_mut() {
             player.turn_number = turn_numbers.next().unwrap();
+            // @Performance: we can avoid cloning here
+            // because we don't modify the hashmap before we send the data.
+            // the problem is convincing that to the rust compiler
+            // which sees us mutably borrowing the hashmap
+            // (to send data out). So, use unsafe?
+            players.insert(player.turn_number, player.name.clone());
+         }
+
+         // Send out game start events
+         for (id, player) in &mut lobby.players {
             match player.connection {
                Connection::Connected(ref mut sender) => {
                   let _ = serialize_and_send(
@@ -441,6 +455,7 @@ impl Server {
                      &PalaceOutMessage::GameStartEvent(GameStartEvent {
                         hand: lobby.game.as_ref().unwrap().get_hand(player.turn_number),
                         turn_number: player.turn_number,
+                        players: &players,
                      }),
                   );
                   let _ = serialize_and_send(sender, &PalaceOutMessage::PublicGameStateEvent(&public_gs));
@@ -451,6 +466,7 @@ impl Server {
                   ai.on_game_start(GameStartEvent {
                      hand: lobby.game.as_ref().unwrap().get_hand(player.turn_number),
                      turn_number: player.turn_number,
+                     players: &players,
                   });
                   ai.on_game_state_update(&public_gs);
                }
@@ -527,13 +543,13 @@ impl Server {
          if let Some(player) = lobby.players.get_mut(&message.player_id) {
             player.connection = Connection::Connected(self.out.clone());
             if let Some(ref gs) = lobby.game {
-               let _ = serialize_and_send(
+               /*let _ = serialize_and_send(
                   &mut self.out,
                   &PalaceOutMessage::GameStartEvent(GameStartEvent {
                      hand: gs.get_hand(player.turn_number),
                      turn_number: player.turn_number,
                   }),
-               );
+               );*/
                let _ = serialize_and_send(
                   &mut self.out,
                   &PalaceOutMessage::PublicGameStateEvent(&gs.public_state()),
