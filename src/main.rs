@@ -120,17 +120,16 @@ fn ai_play_loop(lobbies: &Arc<RwLock<HashMap<LobbyId, Lobby>>>) {
                            Ok(()) => {
                               report_choose_faceup(&gs, &mut lobby.players, *player_id);
                            }
-                           Err(_) => {
-                              match lobby.players.get_mut(player_id).unwrap().connection {
-                                 Connection::Ai(ref mut ai) => {
-                                    error!("Bot (strategy: {}) failed to choose three faceup", ai.strategy_name())
+                           Err(_) => match lobby.players.get_mut(player_id).unwrap().connection {
+                              Connection::Ai(ref mut ai) => {
+                                 error!("Bot (strategy: {}) failed to choose three faceup", ai.strategy_name());
+                                 if ai.strategy_name() != "Random" {
+                                    info!("Falling back to Random");
+                                    *ai = Box::new(ai::random::new());
                                  }
-                                 _ => unreachable!(),
                               }
-                              // TODO: in future, if this occurs we should swap out the bot
-                              // strategy (default to something like random)
-                              // to try and let the game proceed
-                           }
+                              _ => unreachable!(),
+                           },
                         }
                      }
                      game::GamePhase::Play => {
@@ -148,17 +147,16 @@ fn ai_play_loop(lobbies: &Arc<RwLock<HashMap<LobbyId, Lobby>>>) {
                            Ok(()) => {
                               report_make_play(&gs, &mut lobby.players, *player_id);
                            }
-                           Err(_) => {
-                              match lobby.players.get_mut(player_id).unwrap().connection {
-                                 Connection::Ai(ref mut ai) => {
-                                    error!("Bot (strategy: {}) failed to make play", ai.strategy_name())
+                           Err(_) => match lobby.players.get_mut(player_id).unwrap().connection {
+                              Connection::Ai(ref mut ai) => {
+                                 error!("Bot (strategy: {}) failed to make play", ai.strategy_name());
+                                 if ai.strategy_name() != "Random" {
+                                    info!("Falling back to Random");
+                                    *ai = Box::new(ai::random::new());
                                  }
-                                 _ => unreachable!(),
                               }
-                              // TODO: in future, if this occurs we should swap out the bot
-                              // strategy (default to something like random)
-                              // to try and let the game proceed
-                           }
+                              _ => unreachable!(),
+                           },
                         }
                      }
                      game::GamePhase::Complete => {
@@ -404,7 +402,12 @@ impl Server {
          return Err(JoinLobbyError::LobbyNotFound);
       };
 
-      update_connected_player_info(&mut self.connected_lobby_player, &mut lobbies, message.lobby_id, new_player_id);
+      update_connected_player_info(
+         &mut self.connected_lobby_player,
+         &mut lobbies,
+         message.lobby_id,
+         new_player_id,
+      );
 
       Ok(())
    }
@@ -566,7 +569,12 @@ impl Server {
    }
 }
 
-fn update_connected_player_info(connected_lobby_player: &mut Option<(LobbyId, PlayerId)>, lobbies: &mut HashMap<LobbyId, Lobby>, new_lobby_id: LobbyId, new_player_id: PlayerId) {
+fn update_connected_player_info(
+   connected_lobby_player: &mut Option<(LobbyId, PlayerId)>,
+   lobbies: &mut HashMap<LobbyId, Lobby>,
+   new_lobby_id: LobbyId,
+   new_player_id: PlayerId,
+) {
    disconnect_old_player(connected_lobby_player, lobbies);
 
    *connected_lobby_player = Some((new_lobby_id, new_player_id));
