@@ -124,6 +124,13 @@ pub(crate) struct ReconnectMessage {
    pub lobby_id: LobbyId,
 }
 
+#[derive(Deserialize)]
+pub(crate) struct KickPlayerMessage {
+   pub player_id: PlayerId,
+   pub lobby_id: LobbyId,
+   pub target_player_num: u8,
+}
+
 #[derive(Serialize)]
 pub(crate) enum MakePlayError {
    LobbyNotFound,
@@ -157,6 +164,7 @@ pub(crate) struct PlayerJoinEvent<'a> {
 #[derive(Serialize)]
 pub(crate) struct PlayerLeaveEvent {
    pub total_num_players: u8,
+   pub leaving_player_num: u8,
 }
 
 #[derive(Copy, Clone, Deserialize)]
@@ -174,6 +182,13 @@ pub(crate) enum RequestAiError {
    LobbyTooSmall,
 }
 
+#[derive(Serialize)]
+pub(crate) enum KickPlayerError {
+   NotLobbyOwner,
+   LobbyNotFound,
+   TargetPlayerNotFound,
+}
+
 #[derive(Deserialize)]
 pub(crate) enum PalaceInMessage {
    NewLobby(NewLobbyMessage),
@@ -184,6 +199,7 @@ pub(crate) enum PalaceInMessage {
    MakePlay(MakePlayMessage),
    Reconnect(ReconnectMessage),
    RequestAi(RequestAiMessage),
+   KickPlayer(KickPlayerMessage)
 }
 
 #[derive(Serialize)]
@@ -196,6 +212,7 @@ pub(crate) enum PalaceOutMessage<'a> {
    MakePlayResponse(Result<(), MakePlayError>),
    ReconnectResponse(Result<(), ReconnectError>),
    RequestAiResponse(Result<(), RequestAiError>),
+   KickPlayerResponse(Result<(), KickPlayerError>),
    PublicGameStateEvent(&'a PublicGameState<'a>),
    HandEvent(HandEvent<'a>),
    GameStartEvent(GameStartEvent<'a>),

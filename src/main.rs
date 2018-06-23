@@ -56,6 +56,7 @@ where
 
 struct Lobby {
    players: HashMap<PlayerId, Player>,
+   players_by_public_id: HashMap<u8, PlayerId>,
    ai_players: HashMap<u8, PlayerId>,
    max_players: u8,
    password: String,
@@ -63,6 +64,14 @@ struct Lobby {
    owner: PlayerId,
    name: String,
    creation_time: Instant,
+}
+
+fn next_public_id(players_by_public_id: &HashMap<u8, PlayerId>) -> u8 {
+   let mut id: u8 = 0;
+   while players_by_public_id.contains_key(&id) {
+      id += 1;
+   }
+   id
 }
 
 enum Connection {
@@ -287,6 +296,10 @@ impl Server {
             let response = PalaceOutMessage::ReconnectResponse(self.do_reconnect(&message));
             serialize_and_send(&mut self.out, &response)
          }
+         PalaceInMessage::KickPlayer(message) => {
+            let response = PalaceOutMessage::KickPlayerResponse(self.do_kick_player(&message));
+            serialize_and_send(&mut self.out, &response)
+         }
       }
    }
 
@@ -309,7 +322,7 @@ impl Server {
                   Player {
                      name: ai::get_bot_name(),
                      connection: Connection::Ai(ai),
-                     turn_number: 0,
+                     turn_number: next_public_id(&lobby.players_by_public_id),
                   },
                   player_id,
                   lobby,
@@ -339,6 +352,7 @@ impl Server {
       let lobby_id = LobbyId(rand::random());
       let player_id = PlayerId(rand::random());
       let mut players = HashMap::new();
+      let mut players_by_public_id = HashMap::new();
       players.insert(
          player_id,
          Player {
@@ -347,10 +361,12 @@ impl Server {
             turn_number: 0,
          },
       );
+      players_by_public_id.insert(0, player_id);
       lobbies.insert(
          lobby_id,
          Lobby {
             players,
+            players_by_public_id,
             ai_players: HashMap::new(),
             game: None,
             password: message.password,
@@ -416,7 +432,7 @@ impl Server {
             Player {
                name: message.player_name,
                connection: Connection::Connected(self.out.clone()),
-               turn_number: 0,
+               turn_number: next_public_id(&lobby.players_by_public_id),
             },
             player_id,
             lobby,
@@ -597,6 +613,25 @@ impl Server {
          Err(ReconnectError::LobbyNotFound)
       }
    }
+
+   fn do_kick_player(&mut self, message: &KickPlayerMessage) -> Result<(), KickPlayerError> {
+      let mut lobbies = self.lobbies.write().unwrap();
+
+      if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
+         if lobby.owner != message.player_id {
+            Err(KickPlayerError::NotLobbyOwner)
+         } else {
+            if let Some(player_id) = lobby.players_by_public_id.get(&message.target_player_num) {
+               remove_player(*player_id, lobby);
+               Ok(())
+            } else {
+               Err(KickPlayerError::TargetPlayerNotFound)
+            }
+         }
+      } else {
+         Err(KickPlayerError::LobbyNotFound)
+      }
+   }
 }
 
 fn update_connected_player_info(
@@ -679,6 +714,7 @@ fn report_choose_faceup(gs: &GameState, players: &mut HashMap<PlayerId, Player>,
 fn add_player(new_player: Player, player_id: PlayerId, lobby: &mut Lobby) {
    let new_player_name = new_player.name.clone();
 
+   lobby.players_by_public_id.insert(new_player.turn_number, player_id);
    lobby.players.insert(player_id, new_player);
 
    let new_num_players = lobby.players.len() as u8;
@@ -706,6 +742,8 @@ fn remove_player(old_player_id: PlayerId, lobby: &mut Lobby) {
    let old_player_opt = lobby.players.remove(&old_player_id);
 
    if let Some(old_player) = old_player_opt {
+      lobby.players_by_public_id.remove(&old_player.turn_number);
+
       let new_num_players = lobby.players.len() as u8;
       for player in lobby.players.values_mut() {
          match player.connection {
@@ -714,6 +752,7 @@ fn remove_player(old_player_id: PlayerId, lobby: &mut Lobby) {
                   sender,
                   &PalaceOutMessage::PlayerLeaveEvent(PlayerLeaveEvent {
                      total_num_players: new_num_players,
+                     leaving_player_num: old_player.turn_number,
                   }),
                );
             }
