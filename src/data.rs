@@ -154,6 +154,11 @@ pub(crate) struct PlayerJoinEvent<'a> {
    pub new_player_name: &'a str,
 }
 
+#[derive(Serialize)]
+pub(crate) struct PlayerLeaveEvent {
+   pub total_num_players: u8,
+}
+
 #[derive(Copy, Clone, Deserialize)]
 pub(crate) struct RequestAiMessage {
    pub lobby_id: LobbyId,
@@ -195,4 +200,5 @@ pub(crate) enum PalaceOutMessage<'a> {
    HandEvent(HandEvent<'a>),
    GameStartEvent(GameStartEvent<'a>),
    PlayerJoinEvent(PlayerJoinEvent<'a>),
+   PlayerLeaveEvent(PlayerLeaveEvent),
 }

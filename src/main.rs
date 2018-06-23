@@ -568,16 +568,21 @@ impl Server {
    fn do_reconnect(&mut self, message: &ReconnectMessage) -> Result<(), ReconnectError> {
       let mut lobbies = self.lobbies.write().unwrap();
       if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
+         let mut players = HashMap::new();
+         for player in lobby.players.values() {
+            players.insert(player.turn_number, player.name.clone());
+         }
          if let Some(player) = lobby.players.get_mut(&message.player_id) {
             player.connection = Connection::Connected(self.out.clone());
             if let Some(ref gs) = lobby.game {
-               /*let _ = serialize_and_send(
+               let _ = serialize_and_send(
                   &mut self.out,
                   &PalaceOutMessage::GameStartEvent(GameStartEvent {
                      hand: gs.get_hand(player.turn_number),
                      turn_number: player.turn_number,
+                     players: &players
                   }),
-               );*/
+               );
                let _ = serialize_and_send(
                   &mut self.out,
                   &PalaceOutMessage::PublicGameStateEvent(&gs.public_state()),
@@ -608,8 +613,12 @@ fn update_connected_player_info(
 fn disconnect_old_player(connected_lobby_player: &Option<(LobbyId, PlayerId)>, lobbies: &mut HashMap<LobbyId, Lobby>) {
    if let Some((old_lobby_id, old_player_id)) = connected_lobby_player {
       if let Some(old_lobby) = lobbies.get_mut(&old_lobby_id) {
-         if let Some(old_player) = old_lobby.players.get_mut(&old_player_id) {
-            old_player.connection = Connection::Disconnected(Instant::now());
+         if old_lobby.game.is_none() {
+            remove_player(*old_player_id, old_lobby);
+         } else {
+            if let Some(old_player) = old_lobby.players.get_mut(&old_player_id) {
+               old_player.connection = Connection::Disconnected(Instant::now());
+            }
          }
       }
    }
@@ -689,6 +698,28 @@ fn add_player(new_player: Player, player_id: PlayerId, lobby: &mut Lobby) {
          }
          Connection::Disconnected(_) => (),
          Connection::Ai(_) => (),
+      }
+   }
+}
+
+fn remove_player(old_player_id: PlayerId, lobby: &mut Lobby) {
+   let old_player_opt = lobby.players.remove(&old_player_id);
+
+   if let Some(old_player) = old_player_opt {
+      let new_num_players = lobby.players.len() as u8;
+      for player in lobby.players.values_mut() {
+         match player.connection {
+            Connection::Connected(ref mut sender) => {
+               let _ = serialize_and_send(
+                  sender,
+                  &PalaceOutMessage::PlayerLeaveEvent(PlayerLeaveEvent {
+                     total_num_players: new_num_players,
+                  }),
+               );
+            }
+            Connection::Disconnected(_) => (),
+            Connection::Ai(_) => (),
+         }
       }
    }
 }
