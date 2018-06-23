@@ -1,4 +1,4 @@
-#![feature(vec_remove_item)]
+#![feature(vec_remove_item, nll)]
 
 #[macro_use]
 extern crate lazy_static;
@@ -26,7 +26,7 @@ use rand::Rng;
 use serde::{Deserialize, Deserializer, Serializer};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use ws::{CloseCode, Handler, Handshake, Message, Sender};
 
 #[derive(PartialEq, Eq, Hash, Serialize, Deserialize, Clone, Copy)]
@@ -103,7 +103,7 @@ impl From<serde_json::error::Error> for OnMessageError {
 
 fn ai_play_loop(lobbies: &Arc<RwLock<HashMap<LobbyId, Lobby>>>) {
    loop {
-      std::thread::sleep(std::time::Duration::from_millis(100));
+      std::thread::sleep(Duration::from_millis(100));
       //let ai_loop_start = Instant::now();
       {
          let mut lobbies = lobbies.write().unwrap();
@@ -279,7 +279,7 @@ impl Server {
          PalaceInMessage::JoinLobby(message) => {
             // This is an unfortunate special case,
             // we can't (efficiently) delay sending the join lobby response until the end of the message
-            // so on the Ok path the JoinLobbyResposne has already been sent
+            // so on the Ok path the JoinLobbyResponse has already been sent
             match self.do_join_lobby(message) {
                Ok(()) => Ok(()),
                Err(e) => serialize_and_send(&mut self.out, &PalaceOutMessage::JoinLobbyResponse(Err(e))),
@@ -397,7 +397,11 @@ impl Server {
          self.connected_lobby_player = Some((lobby_id, player_id));
       }
 
-      Ok(NewLobbyResponse { player_id, lobby_id, max_players: message.max_players })
+      Ok(NewLobbyResponse {
+         player_id,
+         lobby_id,
+         max_players: message.max_players,
+      })
    }
 
    fn do_join_lobby(&mut self, message: JoinLobbyMessage) -> Result<(), JoinLobbyError> {
@@ -421,11 +425,23 @@ impl Server {
 
          let player_id = PlayerId(rand::random());
 
+         let lobby_players = {
+            let mut lobby_players: Vec<&str> = vec![lobby.players[&lobby.owner].name.as_ref()];
+            lobby_players.extend(
+               lobby
+                  .players
+                  .iter()
+                  .filter(|(id, _)| **id != lobby.owner)
+                  .map(|(_, p)| p.name.as_str()),
+            );
+            lobby_players
+         };
+
          let _ = serialize_and_send(
             &mut self.out,
             &PalaceOutMessage::JoinLobbyResponse(Ok(JoinLobbyResponse {
                player_id,
-               lobby_players: lobby.players.values().map(|x| x.name.as_ref()).collect(),
+               lobby_players,
                max_players: lobby.max_players,
             })),
          );
@@ -700,7 +716,7 @@ fn run_server(address: &'static str) {
    {
       let thread_lobbies = lobbies.clone();
       std::thread::spawn(move || loop {
-         std::thread::sleep(std::time::Duration::from_secs(30));
+         std::thread::sleep(Duration::from_secs(30));
          let lobby_clean_start = Instant::now();
          let mut lobbies = thread_lobbies.write().unwrap();
          lobbies.retain(|_, lobby| {
@@ -709,7 +725,11 @@ fn run_server(address: &'static str) {
                   Connection::Connected(_) => {
                      return true;
                   }
-                  Connection::Disconnected(_) => (),
+                  Connection::Disconnected(disconnection_time) => {
+                     if disconnection_time.elapsed() < Duration::from_secs(30) {
+                        return true;
+                     }
+                  }
                   Connection::Ai(_) => (),
                }
             }
@@ -916,7 +936,7 @@ mod test {
             run_server("127.0.0.1:3013");
          });
          // TODO ideally this would be a retry ready check
-         std::thread::sleep(std::time::Duration::from_secs(5));
+         std::thread::sleep(Duration::from_secs(5));
          *server_up = true
       }
    }
@@ -942,7 +962,7 @@ mod test {
          tc.disconnect();
       }
 
-      std::thread::sleep(std::time::Duration::from_secs(30));
+      std::thread::sleep(Duration::from_secs(30));
 
       // Ensure lobby is cleaned up
       {
@@ -986,6 +1006,7 @@ mod test {
             player_id: player_id,
             lobby_id: lobby_id,
          }));
+
          // Ensure that three AI join
          for _ in 0..3 {
             match tc.get() {
@@ -993,6 +1014,7 @@ mod test {
                _ => panic!("Expected PlayerJoinEvent"),
             }
          }
+
          // Ensure the AI response is OK
          match tc.get() {
             TestInMessage::RequestAiResponse(r) => assert!(r.is_ok()),
