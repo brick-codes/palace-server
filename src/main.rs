@@ -210,13 +210,7 @@ impl Handler for Server {
    fn on_close(&mut self, _code: CloseCode, _reason: &str) {
       debug!("A connection closed");
       let mut lobbies = self.lobbies.write().unwrap();
-      if let Some((lobby_id, player_id)) = self.connected_lobby_player {
-         if let Some(lobby) = lobbies.get_mut(&lobby_id) {
-            if let Some(player) = lobby.players.get_mut(&player_id) {
-               player.connection = Connection::Disconnected(Instant::now());
-            }
-         }
-      }
+      disconnect_old_player(&mut self.connected_lobby_player, &mut lobbies);
    }
 
    fn on_open(&mut self, _: Handshake) -> ws::Result<()> {
@@ -344,18 +338,7 @@ impl Server {
          },
       );
 
-      // Update connected player info
-      {
-         if let Some((old_lobby_id, old_player_id)) = self.connected_lobby_player {
-            if let Some(old_lobby) = lobbies.get_mut(&old_lobby_id) {
-               if let Some(old_player) = old_lobby.players.get_mut(&old_player_id) {
-                  old_player.connection = Connection::Disconnected(Instant::now());
-               }
-            }
-         }
-
-         self.connected_lobby_player = Some((lobby_id, player_id));
-      }
+      update_connected_player_info(&mut self.connected_lobby_player, &mut lobbies, lobby_id, player_id);
 
       Ok(NewLobbyResponse {
          player_id,
@@ -421,18 +404,7 @@ impl Server {
          return Err(JoinLobbyError::LobbyNotFound);
       };
 
-      // Update connected player info
-      {
-         if let Some((old_lobby_id, old_player_id)) = self.connected_lobby_player {
-            if let Some(old_lobby) = lobbies.get_mut(&old_lobby_id) {
-               if let Some(old_player) = old_lobby.players.get_mut(&old_player_id) {
-                  old_player.connection = Connection::Disconnected(Instant::now());
-               }
-            }
-         }
-
-         self.connected_lobby_player = Some((message.lobby_id, new_player_id));
-      }
+      update_connected_player_info(&mut self.connected_lobby_player, &mut lobbies, message.lobby_id, new_player_id);
 
       Ok(())
    }
@@ -479,7 +451,8 @@ impl Server {
                   ai.on_game_start(GameStartEvent {
                      hand: lobby.game.as_ref().unwrap().get_hand(player.turn_number),
                      turn_number: player.turn_number,
-                  })
+                  });
+                  ai.on_game_state_update(&public_gs);
                }
             }
          }
@@ -573,6 +546,22 @@ impl Server {
          }
       } else {
          Err(ReconnectError::LobbyNotFound)
+      }
+   }
+}
+
+fn update_connected_player_info(connected_lobby_player: &mut Option<(LobbyId, PlayerId)>, lobbies: &mut HashMap<LobbyId, Lobby>, new_lobby_id: LobbyId, new_player_id: PlayerId) {
+   disconnect_old_player(connected_lobby_player, lobbies);
+
+   *connected_lobby_player = Some((new_lobby_id, new_player_id));
+}
+
+fn disconnect_old_player(connected_lobby_player: &Option<(LobbyId, PlayerId)>, lobbies: &mut HashMap<LobbyId, Lobby>) {
+   if let Some((old_lobby_id, old_player_id)) = connected_lobby_player {
+      if let Some(old_lobby) = lobbies.get_mut(&old_lobby_id) {
+         if let Some(old_player) = old_lobby.players.get_mut(&old_player_id) {
+            old_player.connection = Connection::Disconnected(Instant::now());
+         }
       }
    }
 }

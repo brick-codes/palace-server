@@ -59,8 +59,8 @@ pub(crate) fn get_bot_name_clandestine() -> String {
          }
          suffix
       }
-      2 => rand::thread_rng().gen_range(90, 100).to_string(),
-      3 => rand::thread_rng().gen_range(1990, 2001).to_string(),
+      2 => rand::thread_rng().gen_range(80, 100).to_string(),
+      3 => rand::thread_rng().gen_range(1980, 2001).to_string(),
       _ => unreachable!(),
    };
    format!("{}{}", base, suffix)
