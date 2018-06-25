@@ -621,13 +621,11 @@ impl Server {
       if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
          if lobby.owner != message.player_id {
             Err(KickPlayerError::NotLobbyOwner)
+         } else if let Some(player_id) = lobby.players_by_public_id.get(&message.slot) {
+            remove_player(*player_id, lobby, Some(LobbyCloseEvent::Kicked));
+            Ok(())
          } else {
-            if let Some(player_id) = lobby.players_by_public_id.get(&message.slot) {
-               remove_player(*player_id, lobby, Some(LobbyCloseEvent::Kicked));
-               Ok(())
-            } else {
-               Err(KickPlayerError::TargetPlayerNotFound)
-            }
+            Err(KickPlayerError::TargetPlayerNotFound)
          }
       } else {
          Err(KickPlayerError::LobbyNotFound)
@@ -652,16 +650,14 @@ fn disconnect_old_player(connected_lobby_player: &Option<(LobbyId, PlayerId)>, l
          if old_lobby.game.is_none() {
             remove_player(*old_player_id, old_lobby, None);
             if old_lobby.owner == *old_player_id {
-               let old_ids: Vec<PlayerId> = old_lobby.players.keys().map(|x| *x).collect();
+               let old_ids: Vec<PlayerId> = old_lobby.players.keys().cloned().collect();
                for id in old_ids {
                   remove_player(id, old_lobby, Some(LobbyCloseEvent::OwnerLeft))
                }
                lobbies.remove(&old_lobby_id);
             }
-         } else {
-            if let Some(old_player) = old_lobby.players.get_mut(&old_player_id) {
-               old_player.connection = Connection::Disconnected(Instant::now());
-            }
+         } else if let Some(old_player) = old_lobby.players.get_mut(&old_player_id) {
+            old_player.connection = Connection::Disconnected(Instant::now());
          }
       }
    }
