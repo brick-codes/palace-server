@@ -623,7 +623,7 @@ impl Server {
             Err(KickPlayerError::NotLobbyOwner)
          } else {
             if let Some(player_id) = lobby.players_by_public_id.get(&message.slot) {
-               remove_player(*player_id, lobby);
+               remove_player(*player_id, lobby, Some(LobbyCloseEvent::Kicked));
                Ok(())
             } else {
                Err(KickPlayerError::TargetPlayerNotFound)
@@ -650,7 +650,14 @@ fn disconnect_old_player(connected_lobby_player: &Option<(LobbyId, PlayerId)>, l
    if let Some((old_lobby_id, old_player_id)) = connected_lobby_player {
       if let Some(old_lobby) = lobbies.get_mut(&old_lobby_id) {
          if old_lobby.game.is_none() {
-            remove_player(*old_player_id, old_lobby);
+            remove_player(*old_player_id, old_lobby, None);
+            if old_lobby.owner == *old_player_id {
+               let old_ids: Vec<PlayerId> = old_lobby.players.keys().map(|x| *x).collect();
+               for id in old_ids {
+                  remove_player(id, old_lobby, Some(LobbyCloseEvent::OwnerLeft))
+               }
+               lobbies.remove(&old_lobby_id);
+            }
          } else {
             if let Some(old_player) = old_lobby.players.get_mut(&old_player_id) {
                old_player.connection = Connection::Disconnected(Instant::now());
@@ -741,11 +748,21 @@ fn add_player(new_player: Player, player_id: PlayerId, lobby: &mut Lobby) {
    }
 }
 
-fn remove_player(old_player_id: PlayerId, lobby: &mut Lobby) {
+fn remove_player(old_player_id: PlayerId, lobby: &mut Lobby, opt_event: Option<LobbyCloseEvent>) {
    let old_player_opt = lobby.players.remove(&old_player_id);
 
-   if let Some(old_player) = old_player_opt {
+   if let Some(mut old_player) = old_player_opt {
       lobby.players_by_public_id.remove(&old_player.turn_number);
+
+      if let Some(event) = opt_event {
+         match old_player.connection {
+            Connection::Connected(ref mut sender) => {
+               let _ = serialize_and_send(sender, &PalaceOutMessage::LobbyCloseEvent(event));
+            }
+            Connection::Disconnected(_) => (),
+            Connection::Ai(_) => (),
+         }
+      }
 
       let new_num_players = lobby.players.len() as u8;
       for player in lobby.players.values_mut() {

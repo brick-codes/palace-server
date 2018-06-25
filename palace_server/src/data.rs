@@ -191,6 +191,12 @@ pub(crate) enum KickPlayerError {
    CantKickLobbyOwner,
 }
 
+#[derive(Serialize)]
+pub(crate) enum LobbyCloseEvent {
+   Kicked,
+   OwnerLeft,
+}
+
 #[derive(Deserialize)]
 pub(crate) enum PalaceInMessage {
    NewLobby(NewLobbyMessage),
@@ -220,4 +226,5 @@ pub(crate) enum PalaceOutMessage<'a> {
    GameStartEvent(GameStartEvent<'a>),
    PlayerJoinEvent(PlayerJoinEvent<'a>),
    PlayerLeaveEvent(PlayerLeaveEvent),
+   LobbyCloseEvent(LobbyCloseEvent),
 }
