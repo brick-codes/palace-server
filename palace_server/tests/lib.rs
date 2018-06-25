@@ -129,7 +129,7 @@ fn test_kicking_player_new_player_reuse_id() {
          match tc.get() {
             InMessage::PlayerJoinEvent(pje) => {
                assert_eq!(pje.slot, i + 1);
-            },
+            }
             _ => panic!("Expected PlayerJoinEvent"),
          }
       }
@@ -158,7 +158,7 @@ fn test_kicking_player_new_player_reuse_id() {
       // Ensure the kick response is OK
       match tc.get() {
          InMessage::KickPlayerResponse(r) => assert!(r.is_ok()),
-         _ => panic!("Expected KickPlayerResponse")
+         _ => panic!("Expected KickPlayerResponse"),
       }
    }
 
@@ -174,7 +174,7 @@ fn test_kicking_player_new_player_reuse_id() {
       match tc.get() {
          InMessage::PlayerJoinEvent(pje) => {
             assert_eq!(pje.slot, 2);
-         },
+         }
          _ => panic!("Expected PlayerJoinEvent"),
       }
 
