@@ -242,7 +242,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "palace-server"
+name = "palace-server-bin"
+version = "0.1.0"
+dependencies = [
+ "palace_server 0.1.0",
+]
+
+[[package]]
+name = "palace_server"
 version = "0.1.0"
 dependencies = [
  "lazy_static 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",

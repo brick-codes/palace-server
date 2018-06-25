@@ -128,7 +128,7 @@ pub(crate) struct ReconnectMessage {
 pub(crate) struct KickPlayerMessage {
    pub player_id: PlayerId,
    pub lobby_id: LobbyId,
-   pub target_player_num: u8,
+   pub slot: u8,
 }
 
 #[derive(Serialize)]
@@ -159,12 +159,13 @@ pub(crate) enum ReconnectError {
 pub(crate) struct PlayerJoinEvent<'a> {
    pub total_num_players: u8,
    pub new_player_name: &'a str,
+   pub slot: u8,
 }
 
 #[derive(Serialize)]
 pub(crate) struct PlayerLeaveEvent {
    pub total_num_players: u8,
-   pub leaving_player_num: u8,
+   pub slot: u8,
 }
 
 #[derive(Copy, Clone, Deserialize)]
@@ -187,6 +188,7 @@ pub(crate) enum KickPlayerError {
    NotLobbyOwner,
    LobbyNotFound,
    TargetPlayerNotFound,
+   CantKickLobbyOwner,
 }
 
 #[derive(Deserialize)]
@@ -199,7 +201,7 @@ pub(crate) enum PalaceInMessage {
    MakePlay(MakePlayMessage),
    Reconnect(ReconnectMessage),
    RequestAi(RequestAiMessage),
-   KickPlayer(KickPlayerMessage)
+   KickPlayer(KickPlayerMessage),
 }
 
 #[derive(Serialize)]
