@@ -677,9 +677,7 @@ fn report_make_play(gs: &GameState, players: &mut HashMap<PlayerId, Player>, id_
             if *id == id_of_last_player {
                let _ = serialize_and_send(
                   sender,
-                  &PalaceOutMessage::HandEvent(HandEvent {
-                     hand: gs.get_hand(player.turn_number),
-                  }),
+                  &PalaceOutMessage::HandEvent(gs.get_hand(player.turn_number)),
                );
             }
             let _ = serialize_and_send(sender, &PalaceOutMessage::PublicGameStateEvent(&public_gs));
@@ -703,9 +701,7 @@ fn report_choose_faceup(gs: &GameState, players: &mut HashMap<PlayerId, Player>,
             if *id == id_of_last_player {
                let _ = serialize_and_send(
                   sender,
-                  &PalaceOutMessage::HandEvent(HandEvent {
-                     hand: gs.get_hand(player.turn_number),
-                  }),
+                  &PalaceOutMessage::HandEvent(gs.get_hand(player.turn_number)),
                );
             }
             let _ = serialize_and_send(sender, &PalaceOutMessage::PublicGameStateEvent(&public_gs));

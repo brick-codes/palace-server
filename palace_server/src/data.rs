@@ -93,14 +93,9 @@ pub(crate) struct ChooseFaceupMessage {
 
 #[derive(Deserialize)]
 pub(crate) struct MakePlayMessage {
-   pub cards: Box<[Card]>,
    pub lobby_id: LobbyId,
    pub player_id: PlayerId,
-}
-
-#[derive(Serialize)]
-pub(crate) struct HandEvent<'a> {
-   pub hand: &'a [Card],
+   pub cards: Box<[Card]>,
 }
 
 #[derive(Serialize)]
@@ -222,7 +217,7 @@ pub(crate) enum PalaceOutMessage<'a> {
    RequestAiResponse(Result<(), RequestAiError>),
    KickPlayerResponse(Result<(), KickPlayerError>),
    PublicGameStateEvent(&'a PublicGameState<'a>),
-   HandEvent(HandEvent<'a>),
+   HandEvent(&'a [Card]),
    GameStartEvent(GameStartEvent<'a>),
    PlayerJoinEvent(PlayerJoinEvent<'a>),
    PlayerLeaveEvent(PlayerLeaveEvent),
