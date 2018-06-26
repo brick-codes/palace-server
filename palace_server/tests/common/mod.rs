@@ -82,6 +82,27 @@ impl TestClient {
          ))
          .unwrap();
    }
+
+   pub fn new_lobby(&mut self) -> (String, String) {
+      self.new_lobby_named("TestLobby")
+   }
+
+   pub fn new_lobby_named(&mut self, name: &str) -> (String, String) {
+      self.send(OutMessage::NewLobby(NewLobbyMessage {
+         player_name: "TestClient",
+         lobby_name: name,
+         password: "foo",
+         max_players: 4,
+      }));
+      let nlr = self.get();
+      match nlr {
+         InMessage::NewLobbyResponse(r) => {
+            let inner = r.expect("New lobby failed");
+            (inner.player_id, inner.lobby_id)
+         }
+         _ => panic!("Expected new lobby response"),
+      }
+   }
 }
 
 static SERVER_UP: Mutex<bool> = Mutex::new(false);

@@ -648,13 +648,19 @@ fn disconnect_old_player(connected_lobby_player: &Option<(LobbyId, PlayerId)>, l
    if let Some((old_lobby_id, old_player_id)) = connected_lobby_player {
       if let Some(old_lobby) = lobbies.get_mut(&old_lobby_id) {
          if old_lobby.game.is_none() {
-            remove_player(*old_player_id, old_lobby, None);
             if old_lobby.owner == *old_player_id {
-               let old_ids: Vec<PlayerId> = old_lobby.players.keys().cloned().collect();
-               for id in old_ids {
-                  remove_player(id, old_lobby, Some(LobbyCloseEvent::OwnerLeft))
+               for (_, old_player) in old_lobby.players.iter_mut().filter(|(id, _)| *id != old_player_id) {
+                  match old_player.connection {
+                     Connection::Connected(ref mut sender) => {
+                        let _ = serialize_and_send(sender, &PalaceOutMessage::LobbyCloseEvent(LobbyCloseEvent::OwnerLeft));
+                     }
+                     Connection::Disconnected(_) => (),
+                     Connection::Ai(_) => (),
+                  }
                }
                lobbies.remove(&old_lobby_id);
+            } else {
+               remove_player(*old_player_id, old_lobby, None);
             }
          } else if let Some(old_player) = old_lobby.players.get_mut(&old_player_id) {
             old_player.connection = Connection::Disconnected(Instant::now());

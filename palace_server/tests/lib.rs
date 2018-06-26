@@ -16,20 +16,12 @@ use std::time::Duration;
 fn test_lobbies_clean_up() {
    ensure_test_server_up();
 
+   const JUNK_LOBBY_NAME: &'static str = "JunkLobby";
+
    // Create a lobby
    {
       let mut tc = TestClient::new();
-      tc.send(OutMessage::NewLobby(NewLobbyMessage {
-         player_name: "TestClient".into(),
-         lobby_name: "JunkLobby".into(),
-         password: "".into(),
-         max_players: 4,
-      }));
-      let nlr = tc.get();
-      match nlr {
-         InMessage::NewLobbyResponse(r) => assert!(r.is_ok()),
-         _ => panic!("Expected new lobby response"),
-      }
+      tc.new_lobby_named(JUNK_LOBBY_NAME);
       tc.disconnect();
    }
 
@@ -41,7 +33,7 @@ fn test_lobbies_clean_up() {
       tc.send(OutMessage::ListLobbies);
       let llr = tc.get();
       match llr {
-         InMessage::ListLobbiesResponse(r) => assert!(r.iter().find(|x| x.name == "JunkLobby").is_none()),
+         InMessage::ListLobbiesResponse(r) => assert!(r.iter().find(|x| x.name == JUNK_LOBBY_NAME).is_none()),
          _ => panic!("Expected list lobbies response"),
       }
    }
@@ -53,22 +45,7 @@ fn test_bots_join_lobby_after_request() {
 
    let mut tc = TestClient::new();
    // Create a lobby
-   let (player_id, lobby_id) = {
-      tc.send(OutMessage::NewLobby(NewLobbyMessage {
-         player_name: "TestClient".into(),
-         lobby_name: "TestLobby".into(),
-         password: "foo".into(),
-         max_players: 4,
-      }));
-      let nlr = tc.get();
-      match nlr {
-         InMessage::NewLobbyResponse(r) => {
-            let inner = r.expect("New lobby failed");
-            (inner.player_id, inner.lobby_id)
-         }
-         _ => panic!("Expected new lobby response"),
-      }
-   };
+   let (player_id, lobby_id) = tc.new_lobby();
 
    // Request 3 AI
    {
@@ -99,22 +76,7 @@ fn test_kicking_player_new_player_reuse_id() {
    ensure_test_server_up();
 
    let mut tc = TestClient::new();
-   let (player_id, lobby_id) = {
-      tc.send(OutMessage::NewLobby(NewLobbyMessage {
-         player_name: "TestClient".into(),
-         lobby_name: "TestLobby".into(),
-         password: "foo".into(),
-         max_players: 4,
-      }));
-      let nlr = tc.get();
-      match nlr {
-         InMessage::NewLobbyResponse(r) => {
-            let inner = r.expect("New lobby failed");
-            (inner.player_id, inner.lobby_id)
-         }
-         _ => panic!("Expected new lobby response"),
-      }
-   };
+   let (player_id, lobby_id) = tc.new_lobby();
 
    // Request some AI
    {
@@ -182,6 +144,41 @@ fn test_kicking_player_new_player_reuse_id() {
       match tc.get() {
          InMessage::RequestAiResponse(r) => assert!(r.is_ok()),
          _ => panic!("Expected RequestAiResponse"),
+      }
+   }
+}
+
+#[test]
+fn test_owner_leaving_closes_lobby() {
+   ensure_test_server_up();
+
+   let mut owner_tc = TestClient::new();
+   let mut player_tc = TestClient::new();
+
+   let (_, lobby_id) = owner_tc.new_lobby();
+
+   // Join lobby
+   {
+      player_tc.send(OutMessage::JoinLobby(JoinLobbyMessage {
+         lobby_id: &lobby_id,
+         player_name: "TestClient",
+         password: "foo",
+      }));
+      match player_tc.get() {
+         InMessage::JoinLobbyResponse(r) => assert!(r.is_ok()),
+         _ => panic!("Expected JoinLobbyResponse"),
+      }
+   }
+
+   // Have owner leave
+   let _ = owner_tc.get(); // PlayerJoinEvent
+   owner_tc.disconnect();
+
+   // Lobby should have closed
+   {
+      match player_tc.get() {
+         InMessage::LobbyCloseEvent(lce) => assert_eq!(lce, LobbyCloseEvent::OwnerLeft),
+         x => panic!("Expected LobbyCloseEvent, got {:?}", x),
       }
    }
 }
