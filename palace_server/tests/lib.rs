@@ -13,7 +13,7 @@ use common::*;
 use std::time::Duration;
 
 #[test]
-fn test_lobbies_clean_up() {
+fn lobbies_clean_up() {
    ensure_test_server_up();
 
    const JUNK_LOBBY_NAME: &'static str = "JunkLobby";
@@ -40,7 +40,7 @@ fn test_lobbies_clean_up() {
 }
 
 #[test]
-fn test_bots_join_lobby_after_request() {
+fn bots_join_lobby_after_request() {
    ensure_test_server_up();
 
    let mut tc = TestClient::new();
@@ -72,7 +72,7 @@ fn test_bots_join_lobby_after_request() {
 }
 
 #[test]
-fn test_kicking_player_new_player_reuse_id() {
+fn kicking_player_new_player_reuse_id() {
    ensure_test_server_up();
 
    let mut tc = TestClient::new();
@@ -149,7 +149,7 @@ fn test_kicking_player_new_player_reuse_id() {
 }
 
 #[test]
-fn test_owner_leaving_closes_lobby() {
+fn owner_leaving_closes_lobby() {
    ensure_test_server_up();
 
    let mut owner_tc = TestClient::new();

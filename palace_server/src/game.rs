@@ -382,7 +382,7 @@ mod test {
    }
 
    #[test]
-   fn test_effective_top_card() {
+   fn effective_top_card() {
       let mut game = GameState::new_game_skip_setup(4);
       assert_eq!(game.effective_top_card(), CardValue::Two);
       assert!(game.play_card(CardValue::Three).is_ok());
@@ -392,7 +392,7 @@ mod test {
    }
 
    #[test]
-   fn test_normal_play() {
+   fn normal_play() {
       let mut game = GameState::new_game_skip_setup(4);
       assert!(game.play_card(CardValue::Three).is_ok());
       assert_eq!(game.pile_cards.len(), 1);
@@ -404,7 +404,7 @@ mod test {
    }
 
    #[test]
-   fn test_ten_clears_no_rotate() {
+   fn ten_clears_no_rotate() {
       let mut game = GameState::new_game_skip_setup(4);
       assert!(game.play_card(CardValue::Three).is_ok());
       assert_eq!(game.pile_cards.len(), 1);
@@ -414,7 +414,7 @@ mod test {
    }
 
    #[test]
-   fn test_four_in_a_row_clears_no_rotate() {
+   fn four_in_a_row_clears_no_rotate() {
       let mut game = GameState::new_game_skip_setup(4);
       assert!(game.play_card(CardValue::Three).is_ok());
       assert!(game.play_card(CardValue::Three).is_ok());
@@ -444,7 +444,7 @@ mod test {
    }
 
    #[test]
-   fn test_sevens_invert_accepted_values() {
+   fn sevens_invert_accepted_values() {
       let mut game = GameState::new_game_skip_setup(4);
       assert!(game.play_card(CardValue::Three).is_ok());
       assert!(game.play_card(CardValue::Seven).is_ok());
