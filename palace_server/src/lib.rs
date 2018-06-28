@@ -155,11 +155,13 @@ fn ai_play(lobbies: &mut HashMap<LobbyId, Lobby>) {
                }
                game::Phase::Play => {
                   let play = match lobby.players.get_mut(player_id).unwrap().connection {
-                     Connection::Ai(ref mut ai) => if gs.hands[gs.active_player as usize].is_empty() && gs.face_up_three[gs.active_player as usize].is_empty() {
+                     Connection::Ai(ref mut ai) => if gs.hands[gs.active_player as usize].is_empty()
+                        && gs.face_up_three[gs.active_player as usize].is_empty()
+                     {
                         vec![].into_boxed_slice()
                      } else {
                         ai.take_turn()
-                     }
+                     },
                      _ => continue,
                   };
                   match gs.make_play(play) {
@@ -654,7 +656,8 @@ fn disconnect_old_player(connected_lobby_player: &Option<(LobbyId, PlayerId)>, l
                for (_, old_player) in old_lobby.players.iter_mut().filter(|(id, _)| *id != old_player_id) {
                   match old_player.connection {
                      Connection::Connected(ref mut sender) => {
-                        let _ = serialize_and_send(sender, &PalaceOutMessage::LobbyCloseEvent(LobbyCloseEvent::OwnerLeft));
+                        let _ =
+                           serialize_and_send(sender, &PalaceOutMessage::LobbyCloseEvent(LobbyCloseEvent::OwnerLeft));
                      }
                      Connection::Disconnected(_) => (),
                      Connection::Ai(_) => (),
@@ -677,10 +680,7 @@ fn report_make_play(gs: &GameState, players: &mut HashMap<PlayerId, Player>, id_
       match player.connection {
          Connection::Connected(ref mut sender) => {
             if *id == id_of_last_player {
-               let _ = serialize_and_send(
-                  sender,
-                  &PalaceOutMessage::HandEvent(gs.get_hand(player.turn_number)),
-               );
+               let _ = serialize_and_send(sender, &PalaceOutMessage::HandEvent(gs.get_hand(player.turn_number)));
             }
             let _ = serialize_and_send(sender, &PalaceOutMessage::PublicGameStateEvent(&public_gs));
          }
@@ -701,10 +701,7 @@ fn report_choose_faceup(gs: &GameState, players: &mut HashMap<PlayerId, Player>,
       match player.connection {
          Connection::Connected(ref mut sender) => {
             if *id == id_of_last_player {
-               let _ = serialize_and_send(
-                  sender,
-                  &PalaceOutMessage::HandEvent(gs.get_hand(player.turn_number)),
-               );
+               let _ = serialize_and_send(sender, &PalaceOutMessage::HandEvent(gs.get_hand(player.turn_number)));
             }
             let _ = serialize_and_send(sender, &PalaceOutMessage::PublicGameStateEvent(&public_gs));
          }
@@ -833,10 +830,13 @@ pub fn run_server(address: &'static str) {
                         Connection::Connected(ref mut sender) => {
                            let _ = serialize_and_send(sender, &PalaceOutMessage::LobbyCloseEvent(LobbyCloseEvent::Afk));
                            player.connection = Connection::Disconnected(Instant::now());
-                        },
+                        }
                         Connection::Disconnected(_) => (),
                         Connection::Ai(ref mut ai) => {
-                           error!("Bot (strategy: {}) failed to take its turn within time limit", ai.strategy_name());
+                           error!(
+                              "Bot (strategy: {}) failed to take its turn within time limit",
+                              ai.strategy_name()
+                           );
                            if ai.strategy_name() != "Random" {
                               info!("Falling back to Random");
                               *ai = Box::new(ai::random::new());

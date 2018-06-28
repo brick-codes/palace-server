@@ -185,14 +185,14 @@ pub(crate) enum KickPlayerError {
    LobbyNotFound,
    TargetPlayerNotFound,
    CantKickLobbyOwner,
-   GameInProgress
+   GameInProgress,
 }
 
 #[derive(Serialize)]
 pub(crate) enum LobbyCloseEvent {
    Kicked,
    OwnerLeft,
-   Afk
+   Afk,
 }
 
 #[derive(Deserialize)]
