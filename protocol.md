@@ -168,7 +168,7 @@ This is sent once by each player at the beginning of the game (in the Setup phas
   * If the player has no cards in either their hand or their faceup cards, the list of cards should be blank. The next facedown card will be played.
 
 ##### Description
-This is by each player on their turn when the game is in the Play phase. This message will be sent many times per client per game. After the play is accepted by the server, a [PublicGameStateEvent](#PulbicGameStateEvent) will be sent to all players and a [HandEvent](#HandEvent) will be sent to the player who made the play.
+This is by each player on their turn when the game is in the Play phase. This message will be sent many times per client per game. After the play is accepted by the server, a [PublicGameStateEvent](#PublicGameStateEvent) will be sent to all players and a [HandEvent](#HandEvent) will be sent to the player who made the play.
 
 ## Outgoing Messages (from Server)
 
