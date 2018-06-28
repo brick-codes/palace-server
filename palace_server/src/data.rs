@@ -148,6 +148,7 @@ pub(crate) enum ChooseFaceupError {
 pub(crate) enum ReconnectError {
    LobbyNotFound,
    PlayerNotFound,
+   PlayerKicked,
 }
 
 #[derive(Serialize)]

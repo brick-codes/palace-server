@@ -26,6 +26,9 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use ws::{CloseCode, Handler, Handshake, Message, Sender};
 
+const TURN_TIMER_SECS: u64 = 50;
+const EMPTY_LOBBY_PRUNE_THRESHOLD_SECS: u64 = 30;
+
 #[derive(PartialEq, Eq, Hash, Serialize, Deserialize, Clone, Copy)]
 struct PlayerId(#[serde(serialize_with = "as_hex_str", deserialize_with = "hex_to_u128")] u128);
 
@@ -80,6 +83,7 @@ struct Player {
    name: String,
    connection: Connection,
    turn_number: u8,
+   kicked: bool,
 }
 
 impl Player {
@@ -322,6 +326,7 @@ impl Server {
                      name: ai::get_bot_name(),
                      connection: Connection::Ai(ai),
                      turn_number: next_public_id(&lobby.players_by_turn_num),
+                     kicked: false,
                   },
                   player_id,
                   lobby,
@@ -358,6 +363,7 @@ impl Server {
             name: message.player_name,
             connection: Connection::Connected(self.out.clone()),
             turn_number: 0,
+            kicked: false,
          },
       );
       players_by_public_id.insert(0, player_id);
@@ -431,6 +437,7 @@ impl Server {
                name: message.player_name,
                connection: Connection::Connected(self.out.clone()),
                turn_number: next_public_id(&lobby.players_by_turn_num),
+               kicked: false,
             },
             player_id,
             lobby,
@@ -582,11 +589,17 @@ impl Server {
    fn do_reconnect(&mut self, message: &ReconnectMessage) -> Result<(), ReconnectError> {
       let mut lobbies = self.lobbies.write().unwrap();
       if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
+         // @Performance we construct this but throw it away if the user can't reconnect
+         // (was kicked)
          let mut players = HashMap::new();
          for player in lobby.players.values() {
             players.insert(player.turn_number, player.name.clone());
          }
          if let Some(player) = lobby.players.get_mut(&message.player_id) {
+            if player.kicked {
+               return Err(ReconnectError::PlayerKicked);
+            }
+
             player.connection = Connection::Connected(self.out.clone());
             if let Some(ref gs) = lobby.game {
                let _ = serialize_and_send(
@@ -817,7 +830,7 @@ pub fn run_server(address: &'static str) {
                      continue;
                   }
 
-                  if gs.last_turn_start.elapsed() > Duration::from_secs(50) {
+                  if gs.last_turn_start.elapsed() >= Duration::from_secs(TURN_TIMER_SECS) {
                      // @Performance we do this and then throw it away if it's not a bot that isn't Random...
                      let mut players = HashMap::new();
                      for player in lobby.players.values() {
@@ -830,6 +843,7 @@ pub fn run_server(address: &'static str) {
                         Connection::Connected(ref mut sender) => {
                            let _ = serialize_and_send(sender, &PalaceOutMessage::LobbyCloseEvent(LobbyCloseEvent::Afk));
                            player.connection = Connection::Disconnected(Instant::now());
+                           player.kicked = true;
                         }
                         Connection::Disconnected(_) => (),
                         Connection::Ai(ref mut ai) => {
@@ -872,7 +886,7 @@ pub fn run_server(address: &'static str) {
                         return true;
                      }
                      Connection::Disconnected(disconnection_time) => {
-                        if disconnection_time.elapsed() < Duration::from_secs(30) {
+                        if disconnection_time.elapsed() < Duration::from_secs(EMPTY_LOBBY_PRUNE_THRESHOLD_SECS) {
                            return true;
                         }
                      }

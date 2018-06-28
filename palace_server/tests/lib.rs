@@ -4,6 +4,7 @@ extern crate parking_lot;
 extern crate serde_derive;
 extern crate serde;
 extern crate serde_json;
+extern crate timebomb;
 extern crate ws;
 
 mod common;
@@ -11,6 +12,7 @@ mod common;
 use common::data::*;
 use common::*;
 use std::time::Duration;
+use timebomb::timeout_ms;
 
 #[test]
 fn lobbies_clean_up() {
@@ -197,7 +199,7 @@ fn afk_kick() {
       tc.send(OutMessage::RequestAi(RequestAiMessage {
          player_id: &player_id,
          lobby_id: &lobby_id,
-         num_ai: 1
+         num_ai: 1,
       }));
       let _ = tc.get(); // PJE
       let _ = tc.get(); // RAR
@@ -212,13 +214,16 @@ fn afk_kick() {
    }
 
    // TODO: ADD TIMEOUT (timebomb crate?)
-   loop {
-      match tc.get() {
-         InMessage::LobbyCloseEvent(reason) => {
-            assert!(reason == LobbyCloseEvent::Afk);
-            break;
+   timeout_ms(
+      move || loop {
+         match tc.get() {
+            InMessage::LobbyCloseEvent(reason) => {
+               assert!(reason == LobbyCloseEvent::Afk);
+               break;
+            }
+            _ => (),
          }
-         _ => (),
-      }
-   }
+      },
+      60000,
+   );
 }
