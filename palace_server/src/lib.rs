@@ -649,10 +649,8 @@ impl Server {
                      Connection::Disconnected(_) => {
                         player.kicked = true;
                         Ok(())
-                     },
-                     Connection::Ai(_) => {
-                        Err(KickPlayerError::CantKickAiDuringGame)
                      }
+                     Connection::Ai(_) => Err(KickPlayerError::CantKickAiDuringGame),
                   }
                }
                None => {
