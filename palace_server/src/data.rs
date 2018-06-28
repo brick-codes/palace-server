@@ -186,7 +186,7 @@ pub(crate) enum KickPlayerError {
    LobbyNotFound,
    TargetPlayerNotFound,
    CantKickLobbyOwner,
-   GameInProgress,
+   CantKickAiDuringGame,
 }
 
 #[derive(Serialize)]

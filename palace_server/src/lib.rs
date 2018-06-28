@@ -635,12 +635,31 @@ impl Server {
       if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
          if lobby.owner != message.player_id {
             Err(KickPlayerError::NotLobbyOwner)
-         } else if lobby.game.is_some() {
-            // TODO: just disconnect player, don't remove, and allow kicking if game in progress
-            Err(KickPlayerError::GameInProgress)
          } else if let Some(player_id) = lobby.players_by_turn_num.get(&message.slot) {
-            remove_player(*player_id, lobby, Some(LobbyCloseEvent::Kicked));
-            Ok(())
+            match lobby.game {
+               Some(_) => {
+                  let player = lobby.players.get_mut(&player_id).unwrap();
+                  match player.connection {
+                     Connection::Connected(ref mut sender) => {
+                        let _ = serialize_and_send(sender, &PalaceOutMessage::LobbyCloseEvent(LobbyCloseEvent::Kicked));
+                        player.connection = Connection::Disconnected(Instant::now());
+                        player.kicked = true;
+                        Ok(())
+                     }
+                     Connection::Disconnected(_) => {
+                        player.kicked = true;
+                        Ok(())
+                     },
+                     Connection::Ai(_) => {
+                        Err(KickPlayerError::CantKickAiDuringGame)
+                     }
+                  }
+               }
+               None => {
+                  remove_player(*player_id, lobby, Some(LobbyCloseEvent::Kicked));
+                  Ok(())
+               }
+            }
          } else {
             Err(KickPlayerError::TargetPlayerNotFound)
          }
