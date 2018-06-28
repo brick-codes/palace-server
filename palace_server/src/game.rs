@@ -1,4 +1,5 @@
 use rand::{self, Rng};
+use std::time::Instant;
 
 const HAND_SIZE: usize = 6;
 
@@ -52,7 +53,7 @@ pub struct Card {
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq)]
-pub enum GamePhase {
+pub enum Phase {
    Setup,
    Play,
    Complete,
@@ -67,9 +68,10 @@ pub struct GameState {
    face_down_three: Box<[Vec<Card>]>,
    cleared_cards: Vec<Card>,
    pile_cards: Vec<Card>,
-   pub cur_phase: GamePhase,
+   pub cur_phase: Phase,
    last_cards_played: Vec<Card>,
    out_players: Vec<u8>,
+   pub last_turn_start: Instant,
 }
 
 impl GameState {
@@ -102,9 +104,10 @@ impl GameState {
          face_up_three: face_up_three.into_boxed_slice(),
          cleared_cards: Vec::new(),
          pile_cards: Vec::new(),
-         cur_phase: GamePhase::Setup,
+         cur_phase: Phase::Setup,
          last_cards_played: Vec::new(),
          out_players: Vec::new(),
+         last_turn_start: Instant::now(),
       }
    }
 
@@ -139,7 +142,7 @@ impl GameState {
 
    pub fn choose_three_faceup(&mut self, card_one: Card, card_two: Card, card_three: Card) -> Result<(), &'static str> {
       // Validate phase
-      if self.cur_phase != GamePhase::Setup {
+      if self.cur_phase != Phase::Setup {
          return Err("Can only choose three faceup cards during Setup phase");
       }
 
@@ -175,7 +178,7 @@ impl GameState {
       self.rotate_play();
 
       if self.active_player == 0 {
-         self.cur_phase = GamePhase::Play;
+         self.cur_phase = Phase::Play;
       }
 
       Ok(())
@@ -190,7 +193,7 @@ impl GameState {
       }
 
       // Validate phase
-      if self.cur_phase != GamePhase::Play {
+      if self.cur_phase != Phase::Play {
          return Err("Can only play cards during the play phase");
       }
 
@@ -272,7 +275,7 @@ impl GameState {
       {
          self.out_players.push(self.active_player);
          if self.out_players.len() as u8 == self.num_players - 1 {
-            self.cur_phase = GamePhase::Complete;
+            self.cur_phase = Phase::Complete;
             return Ok(());
          }
          true
@@ -327,6 +330,7 @@ impl GameState {
       while self.out_players.contains(&self.active_player) {
          self.active_player += 1;
       }
+      self.last_turn_start = Instant::now();
    }
 
    fn effective_top_card(&self) -> CardValue {
@@ -354,7 +358,7 @@ pub(crate) struct PublicGameState<'a> {
    pub top_card: Option<&'a Card>,
    pub pile_size: usize,
    pub cleared_size: usize,
-   pub cur_phase: GamePhase,
+   pub cur_phase: Phase,
    pub active_player: u8,
    pub last_cards_played: &'a [Card],
 }
@@ -367,7 +371,7 @@ mod test {
    impl GameState {
       fn new_game_skip_setup(num_players: u8) -> GameState {
          let mut game = GameState::new(num_players);
-         game.cur_phase = GamePhase::Play;
+         game.cur_phase = Phase::Play;
          game
       }
 

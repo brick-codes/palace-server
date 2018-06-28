@@ -6,7 +6,7 @@ impl Lobby {
    pub(crate) fn display(&self, lobby_id: &LobbyId) -> LobbyDisplay {
       LobbyDisplay {
          cur_players: self.players.len() as u8,
-         ai_players: self.ai_players.len() as u8,
+         ai_players: self.players.values().filter(|p| p.is_ai()).count() as u8,
          max_players: self.max_players,
          started: self.game.is_some(),
          has_password: !self.password.is_empty(),
@@ -176,6 +176,7 @@ pub(crate) enum RequestAiError {
    LessThanOneAiRequested,
    LobbyNotFound,
    LobbyTooSmall,
+   GameInProgress,
 }
 
 #[derive(Serialize)]
@@ -184,12 +185,14 @@ pub(crate) enum KickPlayerError {
    LobbyNotFound,
    TargetPlayerNotFound,
    CantKickLobbyOwner,
+   GameInProgress
 }
 
 #[derive(Serialize)]
 pub(crate) enum LobbyCloseEvent {
    Kicked,
    OwnerLeft,
+   Afk
 }
 
 #[derive(Deserialize)]

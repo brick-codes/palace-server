@@ -53,8 +53,7 @@ where
 
 struct Lobby {
    players: HashMap<PlayerId, Player>,
-   players_by_public_id: HashMap<u8, PlayerId>,
-   ai_players: HashMap<u8, PlayerId>,
+   players_by_turn_num: HashMap<u8, PlayerId>,
    max_players: u8,
    password: String,
    game: Option<GameState>,
@@ -83,6 +82,15 @@ struct Player {
    turn_number: u8,
 }
 
+impl Player {
+   fn is_ai(&self) -> bool {
+      match self.connection {
+         Connection::Ai(_) => true,
+         _ => false,
+      }
+   }
+}
+
 struct Server {
    out: Sender,
    lobbies: Arc<RwLock<HashMap<LobbyId, Lobby>>>,
@@ -106,101 +114,91 @@ impl From<serde_json::error::Error> for OnMessageError {
    }
 }
 
-fn ai_play_loop(lobbies: &Arc<RwLock<HashMap<LobbyId, Lobby>>>) {
-   loop {
-      std::thread::sleep(Duration::from_millis(100));
-      //let ai_loop_start = Instant::now();
-      {
-         let mut lobbies = lobbies.write().unwrap();
-         for lobby in &mut lobbies.values_mut() {
-            if let Some(ref mut gs) = lobby.game {
-               if let Some(player_id) = lobby.ai_players.get(&gs.active_player) {
-                  match gs.cur_phase {
-                     game::GamePhase::Setup => {
-                        let faceup_three = match lobby.players.get_mut(player_id).unwrap().connection {
-                           Connection::Ai(ref mut ai) => ai.choose_three_faceup(),
+fn ai_play(lobbies: &mut HashMap<LobbyId, Lobby>) {
+   for lobby in &mut lobbies.values_mut() {
+      if let Some(ref mut gs) = lobby.game {
+         if let Some(player_id) = lobby.players_by_turn_num.get(&gs.active_player) {
+            match gs.cur_phase {
+               game::Phase::Setup => {
+                  let faceup_three = match lobby.players.get_mut(player_id).unwrap().connection {
+                     Connection::Ai(ref mut ai) => ai.choose_three_faceup(),
+                     _ => continue,
+                  };
+                  match gs.choose_three_faceup(faceup_three.0, faceup_three.1, faceup_three.2) {
+                     Ok(()) => {
+                        report_choose_faceup(&gs, &mut lobby.players, *player_id);
+                     }
+                     Err(_) => {
+                        let mut players = HashMap::new();
+                        for player in lobby.players.values() {
+                           players.insert(player.turn_number, player.name.clone());
+                        }
+                        let player = lobby.players.get_mut(player_id).unwrap();
+                        match player.connection {
+                           Connection::Ai(ref mut ai) => {
+                              error!("Bot (strategy: {}) failed to choose three faceup", ai.strategy_name());
+                              if ai.strategy_name() != "Random" {
+                                 info!("Falling back to Random");
+                                 *ai = Box::new(ai::random::new());
+                                 ai.on_game_start(GameStartEvent {
+                                    hand: gs.get_hand(player.turn_number),
+                                    turn_number: player.turn_number,
+                                    players: &players,
+                                 });
+                                 ai.on_game_state_update(&gs.public_state());
+                              }
+                           }
                            _ => unreachable!(),
-                        };
-                        match gs.choose_three_faceup(faceup_three.0, faceup_three.1, faceup_three.2) {
-                           Ok(()) => {
-                              report_choose_faceup(&gs, &mut lobby.players, *player_id);
-                           }
-                           Err(_) => {
-                              let mut players = HashMap::new();
-                              for player in lobby.players.values() {
-                                 players.insert(player.turn_number, player.name.clone());
-                              }
-                              let player = lobby.players.get_mut(player_id).unwrap();
-                              match player.connection {
-                                 Connection::Ai(ref mut ai) => {
-                                    error!("Bot (strategy: {}) failed to choose three faceup", ai.strategy_name());
-                                    if ai.strategy_name() != "Random" {
-                                       info!("Falling back to Random");
-                                       *ai = Box::new(ai::random::new());
-                                       ai.on_game_start(GameStartEvent {
-                                          hand: gs.get_hand(player.turn_number),
-                                          turn_number: player.turn_number,
-                                          players: &players,
-                                       });
-                                       ai.on_game_state_update(&gs.public_state());
-                                    }
-                                 }
-                                 _ => unreachable!(),
-                              }
-                           }
                         }
-                     }
-                     game::GamePhase::Play => {
-                        let play = if gs.hands[gs.active_player as usize].is_empty()
-                           && gs.face_up_three[gs.active_player as usize].is_empty()
-                        {
-                           vec![].into_boxed_slice()
-                        } else {
-                           match lobby.players.get_mut(player_id).unwrap().connection {
-                              Connection::Ai(ref mut ai) => ai.take_turn(),
-                              _ => unreachable!(),
-                           }
-                        };
-                        match gs.make_play(play) {
-                           Ok(()) => {
-                              report_make_play(&gs, &mut lobby.players, *player_id);
-                           }
-                           Err(_) => {
-                              let mut players = HashMap::new();
-                              for player in lobby.players.values() {
-                                 players.insert(player.turn_number, player.name.clone());
-                              }
-                              let player = lobby.players.get_mut(player_id).unwrap();
-                              match player.connection {
-                                 Connection::Ai(ref mut ai) => {
-                                    error!("Bot (strategy: {}) failed to make play", ai.strategy_name());
-                                    if ai.strategy_name() != "Random" {
-                                       info!("Falling back to Random");
-                                       *ai = Box::new(ai::random::new());
-                                       ai.on_game_start(GameStartEvent {
-                                          hand: gs.get_hand(player.turn_number),
-                                          turn_number: player.turn_number,
-                                          players: &players,
-                                       });
-                                       ai.on_game_state_update(&gs.public_state());
-                                    }
-                                 }
-                                 _ => unreachable!(),
-                              }
-                           }
-                        }
-                     }
-                     game::GamePhase::Complete => {
-                        continue;
                      }
                   }
                }
-            } else {
-               continue;
+               game::Phase::Play => {
+                  let play = match lobby.players.get_mut(player_id).unwrap().connection {
+                     Connection::Ai(ref mut ai) => if gs.hands[gs.active_player as usize].is_empty() && gs.face_up_three[gs.active_player as usize].is_empty() {
+                        vec![].into_boxed_slice()
+                     } else {
+                        ai.take_turn()
+                     }
+                     _ => continue,
+                  };
+                  match gs.make_play(play) {
+                     Ok(()) => {
+                        report_make_play(&gs, &mut lobby.players, *player_id);
+                     }
+                     Err(_) => {
+                        let mut players = HashMap::new();
+                        for player in lobby.players.values() {
+                           players.insert(player.turn_number, player.name.clone());
+                        }
+                        let player = lobby.players.get_mut(player_id).unwrap();
+                        match player.connection {
+                           Connection::Ai(ref mut ai) => {
+                              error!("Bot (strategy: {}) failed to make play", ai.strategy_name());
+                              if ai.strategy_name() != "Random" {
+                                 info!("Falling back to Random");
+                                 *ai = Box::new(ai::random::new());
+                                 ai.on_game_start(GameStartEvent {
+                                    hand: gs.get_hand(player.turn_number),
+                                    turn_number: player.turn_number,
+                                    players: &players,
+                                 });
+                                 ai.on_game_state_update(&gs.public_state());
+                              }
+                           }
+                           _ => unreachable!(),
+                        }
+                     }
+                  }
+               }
+               game::Phase::Complete => {
+                  continue;
+               }
             }
          }
+      } else {
+         continue;
       }
-      //trace!("AI runtime: {:?}", ai_loop_start.elapsed());
    }
 }
 
@@ -311,6 +309,8 @@ impl Server {
             Err(RequestAiError::NotLobbyOwner)
          } else if lobby.players.len() + message.num_ai as usize > lobby.max_players as usize {
             Err(RequestAiError::LobbyTooSmall)
+         } else if lobby.game.is_some() {
+            Err(RequestAiError::GameInProgress)
          } else {
             for _ in 0..message.num_ai {
                let player_id = PlayerId(rand::random());
@@ -319,7 +319,7 @@ impl Server {
                   Player {
                      name: ai::get_bot_name(),
                      connection: Connection::Ai(ai),
-                     turn_number: next_public_id(&lobby.players_by_public_id),
+                     turn_number: next_public_id(&lobby.players_by_turn_num),
                   },
                   player_id,
                   lobby,
@@ -363,8 +363,7 @@ impl Server {
          lobby_id,
          Lobby {
             players,
-            players_by_public_id,
-            ai_players: HashMap::new(),
+            players_by_turn_num: players_by_public_id,
             game: None,
             password: message.password,
             name: message.lobby_name,
@@ -429,7 +428,7 @@ impl Server {
             Player {
                name: message.player_name,
                connection: Connection::Connected(self.out.clone()),
-               turn_number: next_public_id(&lobby.players_by_public_id),
+               turn_number: next_public_id(&lobby.players_by_turn_num),
             },
             player_id,
             lobby,
@@ -477,8 +476,9 @@ impl Server {
 
          let mut players = HashMap::new();
          // Assign everyone turn numbers
-         for player in lobby.players.values_mut() {
+         for (id, player) in &mut lobby.players {
             player.turn_number = turn_numbers.next().unwrap();
+            lobby.players_by_turn_num.insert(player.turn_number, *id);
             // @Performance: we can avoid cloning here
             // because we don't modify the hashmap before we send the data.
             // the problem is convincing that to the rust compiler
@@ -488,7 +488,7 @@ impl Server {
          }
 
          // Send out game start events
-         for (id, player) in &mut lobby.players {
+         for player in lobby.players.values_mut() {
             match player.connection {
                Connection::Connected(ref mut sender) => {
                   let _ = serialize_and_send(
@@ -503,7 +503,6 @@ impl Server {
                }
                Connection::Disconnected(_) => (),
                Connection::Ai(ref mut ai) => {
-                  lobby.ai_players.insert(player.turn_number, *id);
                   ai.on_game_start(GameStartEvent {
                      hand: lobby.game.as_ref().unwrap().get_hand(player.turn_number),
                      turn_number: player.turn_number,
@@ -621,7 +620,10 @@ impl Server {
       if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
          if lobby.owner != message.player_id {
             Err(KickPlayerError::NotLobbyOwner)
-         } else if let Some(player_id) = lobby.players_by_public_id.get(&message.slot) {
+         } else if lobby.game.is_some() {
+            // TODO: just disconnect player, don't remove, and allow kicking if game in progress
+            Err(KickPlayerError::GameInProgress)
+         } else if let Some(player_id) = lobby.players_by_turn_num.get(&message.slot) {
             remove_player(*player_id, lobby, Some(LobbyCloseEvent::Kicked));
             Ok(())
          } else {
@@ -721,7 +723,7 @@ fn add_player(new_player: Player, player_id: PlayerId, lobby: &mut Lobby) {
    let new_player_name = new_player.name.clone();
 
    let turn_number = new_player.turn_number;
-   lobby.players_by_public_id.insert(turn_number, player_id);
+   lobby.players_by_turn_num.insert(turn_number, player_id);
    lobby.players.insert(player_id, new_player);
 
    let new_num_players = lobby.players.len() as u8;
@@ -750,7 +752,7 @@ fn remove_player(old_player_id: PlayerId, lobby: &mut Lobby, opt_event: Option<L
    let old_player_opt = lobby.players.remove(&old_player_id);
 
    if let Some(mut old_player) = old_player_opt {
-      lobby.players_by_public_id.remove(&old_player.turn_number);
+      lobby.players_by_turn_num.remove(&old_player.turn_number);
 
       if let Some(event) = opt_event {
          match old_player.connection {
@@ -804,38 +806,94 @@ pub fn run_server(address: &'static str) {
    // @Performance this could be a concurrent hashmap
    let lobbies: Arc<RwLock<HashMap<LobbyId, Lobby>>> = Arc::new(RwLock::new(HashMap::new()));
 
-   // Spawn thread to clean up empty lobbies
+   // Kick idle players
+   {
+      let thread_lobbies = lobbies.clone();
+      std::thread::spawn(move || loop {
+         std::thread::sleep(Duration::from_secs(1));
+         //let kick_idle_start = Instant::now();
+         {
+            let mut lobbies = thread_lobbies.write().unwrap();
+            for lobby in lobbies.values_mut() {
+               if let Some(ref mut gs) = lobby.game {
+                  if gs.cur_phase == game::Phase::Complete {
+                     continue;
+                  }
+
+                  if gs.last_turn_start.elapsed() > Duration::from_secs(50) {
+                     // @Performance we do this and then throw it away if it's not a bot that isn't Random...
+                     let mut players = HashMap::new();
+                     for player in lobby.players.values() {
+                        players.insert(player.turn_number, player.name.clone());
+                     }
+
+                     let player_id = lobby.players_by_turn_num[&gs.active_player];
+                     let player = lobby.players.get_mut(&player_id).unwrap();
+                     match player.connection {
+                        Connection::Connected(ref mut sender) => {
+                           let _ = serialize_and_send(sender, &PalaceOutMessage::LobbyCloseEvent(LobbyCloseEvent::Afk));
+                           player.connection = Connection::Disconnected(Instant::now());
+                        },
+                        Connection::Disconnected(_) => (),
+                        Connection::Ai(ref mut ai) => {
+                           error!("Bot (strategy: {}) failed to take its turn within time limit", ai.strategy_name());
+                           if ai.strategy_name() != "Random" {
+                              info!("Falling back to Random");
+                              *ai = Box::new(ai::random::new());
+                              ai.on_game_start(GameStartEvent {
+                                 hand: gs.get_hand(player.turn_number),
+                                 turn_number: player.turn_number,
+                                 players: &players,
+                              });
+                              ai.on_game_state_update(&gs.public_state());
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+         }
+         //trace!("Kick idle runtime: {:?}", kick_idle_start.elapsed());
+      });
+   }
+
+   // Prune empty lobbies
    {
       let thread_lobbies = lobbies.clone();
       std::thread::spawn(move || loop {
          std::thread::sleep(Duration::from_secs(30));
          let lobby_clean_start = Instant::now();
-         let mut lobbies = thread_lobbies.write().unwrap();
-         lobbies.retain(|_, lobby| {
-            for player in lobby.players.values() {
-               match player.connection {
-                  Connection::Connected(_) => {
-                     return true;
-                  }
-                  Connection::Disconnected(disconnection_time) => {
-                     if disconnection_time.elapsed() < Duration::from_secs(30) {
+         {
+            let mut lobbies = thread_lobbies.write().unwrap();
+            lobbies.retain(|_, lobby| {
+               for player in lobby.players.values() {
+                  match player.connection {
+                     Connection::Connected(_) => {
                         return true;
                      }
+                     Connection::Disconnected(disconnection_time) => {
+                        if disconnection_time.elapsed() < Duration::from_secs(30) {
+                           return true;
+                        }
+                     }
+                     Connection::Ai(_) => (),
                   }
-                  Connection::Ai(_) => (),
                }
-            }
-            false
-         });
+               false
+            });
+         }
          trace!("Lobby cleanup runtime: {:?}", lobby_clean_start.elapsed());
       });
    }
 
-   // Spawn a thread to play AI games
+   // Update AI
    {
-      let cloned_lobbies = lobbies.clone();
-      std::thread::spawn(move || {
-         ai_play_loop(&cloned_lobbies);
+      let thread_lobbies = lobbies.clone();
+      std::thread::spawn(move || loop {
+         std::thread::sleep(Duration::from_millis(100));
+         //let ai_loop_start = Instant::now();
+         ai_play(&mut thread_lobbies.write().unwrap());
+         //trace!("AI runtime: {:?}", ai_loop_start.elapsed());
       });
    }
 
