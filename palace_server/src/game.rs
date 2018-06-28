@@ -116,7 +116,7 @@ impl GameState {
          hands: self
             .hands
             .iter()
-            .map(|x| x.len())
+            .map(|x| x.len() as u16)
             .collect::<Vec<_>>()
             .into_boxed_slice(),
          face_up_three: self
@@ -132,8 +132,8 @@ impl GameState {
             .collect::<Vec<_>>()
             .into_boxed_slice(),
          top_card: self.pile_cards.last(),
-         pile_size: self.pile_cards.len(),
-         cleared_size: self.cleared_cards.len(),
+         pile_size: self.pile_cards.len() as u16,
+         cleared_size: self.cleared_cards.len() as u16,
          cur_phase: self.cur_phase,
          active_player: self.active_player,
          last_cards_played: &self.last_cards_played,
@@ -352,12 +352,12 @@ impl GameState {
 
 #[derive(Serialize)]
 pub(crate) struct PublicGameState<'a> {
-   pub hands: Box<[usize]>,
+   pub hands: Box<[u16]>,
    pub face_up_three: Box<[&'a [Card]]>,
    pub face_down_three: Box<[u8]>,
    pub top_card: Option<&'a Card>,
-   pub pile_size: usize,
-   pub cleared_size: usize,
+   pub pile_size: u16,
+   pub cleared_size: u16,
    pub cur_phase: Phase,
    pub active_player: u8,
    pub last_cards_played: &'a [Card],

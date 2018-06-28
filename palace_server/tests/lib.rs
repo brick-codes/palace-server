@@ -182,3 +182,43 @@ fn owner_leaving_closes_lobby() {
       }
    }
 }
+
+#[test]
+fn afk_kick() {
+   ensure_test_server_up();
+
+   let mut tc = TestClient::new();
+
+   // Create lobby
+   let (player_id, lobby_id) = tc.new_lobby();
+
+   // Add AI
+   {
+      tc.send(OutMessage::RequestAi(RequestAiMessage {
+         player_id: &player_id,
+         lobby_id: &lobby_id,
+         num_ai: 1
+      }));
+      let _ = tc.get(); // PJE
+      let _ = tc.get(); // RAR
+   }
+
+   // Start game
+   {
+      tc.send(OutMessage::StartGame(StartGameMessage {
+         player_id: &player_id,
+         lobby_id: &lobby_id,
+      }));
+   }
+
+   // TODO: ADD TIMEOUT (timebomb crate?)
+   loop {
+      match tc.get() {
+         InMessage::LobbyCloseEvent(reason) => {
+            assert!(reason == LobbyCloseEvent::Afk);
+            break;
+         }
+         _ => (),
+      }
+   }
+}
