@@ -843,7 +843,6 @@ pub fn run_server(address: &'static str) {
                         Connection::Connected(ref mut sender) => {
                            let _ = serialize_and_send(sender, &PalaceOutMessage::LobbyCloseEvent(LobbyCloseEvent::Afk));
                            player.connection = Connection::Disconnected(Instant::now());
-                           player.kicked = true;
                         }
                         Connection::Disconnected(_) => (),
                         Connection::Ai(ref mut ai) => {
