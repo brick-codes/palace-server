@@ -213,7 +213,6 @@ fn afk_kick() {
       }));
    }
 
-   // TODO: ADD TIMEOUT (timebomb crate?)
    timeout_ms(
       move || loop {
          match tc.get() {
