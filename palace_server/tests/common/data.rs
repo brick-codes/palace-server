@@ -91,6 +91,7 @@ pub struct JoinLobbyResponse {
    pub player_id: String,
    pub lobby_players: Box<[String]>,
    pub max_players: u8,
+   pub num_spectators: u8,
 }
 
 #[derive(Debug, Deserialize)]

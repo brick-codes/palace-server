@@ -66,6 +66,37 @@ struct Lobby {
    creation_time: Instant,
 }
 
+impl Lobby {
+   pub(crate) fn display(&self, lobby_id: &LobbyId) -> LobbyDisplay {
+      LobbyDisplay {
+         cur_players: self.players.len() as u8,
+         ai_players: self.players.values().filter(|p| p.is_ai()).count() as u8,
+         max_players: self.max_players,
+         started: self.game.is_some(),
+         has_password: !self.password.is_empty(),
+         owner: &self.players[&self.owner].name,
+         name: &self.name,
+         age: self.creation_time.elapsed().as_secs(),
+         lobby_id: *lobby_id,
+         cur_spectators: self.spectators.len() as u8,
+      }
+   }
+}
+
+#[derive(Serialize)]
+pub(crate) struct LobbyDisplay<'a> {
+   pub cur_players: u8,
+   pub ai_players: u8,
+   pub max_players: u8,
+   pub started: bool,
+   pub has_password: bool,
+   pub owner: &'a str,
+   pub name: &'a str,
+   pub age: u64,
+   pub lobby_id: LobbyId,
+   pub cur_spectators: u8,
+}
+
 fn next_public_id(players_by_public_id: &HashMap<u8, PlayerId>) -> u8 {
    let mut id: u8 = 0;
    while players_by_public_id.contains_key(&id) {
@@ -438,6 +469,7 @@ impl Server {
                player_id,
                lobby_players,
                max_players: lobby.max_players,
+               num_spectators: lobby.spectators.len() as u8,
             })),
          );
 

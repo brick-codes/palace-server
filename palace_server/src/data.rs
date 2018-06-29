@@ -1,35 +1,6 @@
 use game::{Card, PublicGameState};
 use std::collections::HashMap;
-use {Lobby, LobbyId, PlayerId};
-
-impl Lobby {
-   pub(crate) fn display(&self, lobby_id: &LobbyId) -> LobbyDisplay {
-      LobbyDisplay {
-         cur_players: self.players.len() as u8,
-         ai_players: self.players.values().filter(|p| p.is_ai()).count() as u8,
-         max_players: self.max_players,
-         started: self.game.is_some(),
-         has_password: !self.password.is_empty(),
-         owner: &self.players[&self.owner].name,
-         name: &self.name,
-         age: self.creation_time.elapsed().as_secs(),
-         lobby_id: *lobby_id,
-      }
-   }
-}
-
-#[derive(Serialize)]
-pub(crate) struct LobbyDisplay<'a> {
-   pub cur_players: u8,
-   pub ai_players: u8,
-   pub max_players: u8,
-   pub started: bool,
-   pub has_password: bool,
-   pub owner: &'a str,
-   pub name: &'a str,
-   pub age: u64,
-   pub lobby_id: LobbyId,
-}
+use {LobbyDisplay, LobbyId, PlayerId};
 
 #[derive(Deserialize)]
 pub(crate) struct NewLobbyMessage {
@@ -65,6 +36,7 @@ pub(crate) struct JoinLobbyResponse<'a> {
    pub player_id: PlayerId,
    pub lobby_players: Vec<&'a str>,
    pub max_players: u8,
+   pub num_spectators: u8,
 }
 
 #[derive(Serialize)]
