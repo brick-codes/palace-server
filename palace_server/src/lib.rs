@@ -57,6 +57,7 @@ where
 struct Lobby {
    players: HashMap<PlayerId, Player>,
    players_by_turn_num: HashMap<u8, PlayerId>,
+   spectators: Vec<Sender>,
    max_players: u8,
    password: String,
    game: Option<GameState>,
@@ -95,10 +96,15 @@ impl Player {
    }
 }
 
+enum ConnectedUser {
+   Player((LobbyId, PlayerId)),
+   Spectator(LobbyId),
+}
+
 struct Server {
    out: Sender,
    lobbies: Arc<RwLock<HashMap<LobbyId, Lobby>>>,
-   connected_lobby_player: Option<(LobbyId, PlayerId)>,
+   connected_user: Option<ConnectedUser>,
 }
 
 enum OnMessageError {
@@ -243,7 +249,9 @@ impl Handler for Server {
    fn on_close(&mut self, _code: CloseCode, _reason: &str) {
       debug!("A connection closed");
       let mut lobbies = self.lobbies.write().unwrap();
-      disconnect_old_player(&self.connected_lobby_player, &mut lobbies);
+      if let Some(ref connected_user_details) = self.connected_user {
+         disconnect_old_player(connected_user_details, &mut lobbies, self.out.connection_id());
+      }
    }
 
    fn on_open(&mut self, _: Handshake) -> ws::Result<()> {
@@ -378,10 +386,11 @@ impl Server {
             owner: player_id,
             max_players: message.max_players,
             creation_time: Instant::now(),
+            spectators: Vec::new(),
          },
       );
 
-      update_connected_player_info(&mut self.connected_lobby_player, &mut lobbies, lobby_id, player_id);
+      update_connected_player_info(&mut self.connected_user, &mut lobbies, ConnectedUser::Player((lobby_id, player_id)), self.out.connection_id());
 
       Ok(NewLobbyResponse {
          player_id,
@@ -449,10 +458,10 @@ impl Server {
       };
 
       update_connected_player_info(
-         &mut self.connected_lobby_player,
+         &mut self.connected_user,
          &mut lobbies,
-         message.lobby_id,
-         new_player_id,
+         ConnectedUser::Player((message.lobby_id, new_player_id)),
+         self.out.connection_id(),
       );
 
       Ok(())
@@ -668,37 +677,46 @@ impl Server {
 }
 
 fn update_connected_player_info(
-   connected_lobby_player: &mut Option<(LobbyId, PlayerId)>,
+   connected_user: &mut Option<ConnectedUser>,
    lobbies: &mut HashMap<LobbyId, Lobby>,
-   new_lobby_id: LobbyId,
-   new_player_id: PlayerId,
+   new_connection: ConnectedUser,
+   our_sender_id: u32,
 ) {
-   disconnect_old_player(connected_lobby_player, lobbies);
+   if let Some(ref connected_user_details) = connected_user {
+      disconnect_old_player(connected_user_details, lobbies, our_sender_id);
+   }
 
-   *connected_lobby_player = Some((new_lobby_id, new_player_id));
+   *connected_user = Some(new_connection);
 }
 
-fn disconnect_old_player(connected_lobby_player: &Option<(LobbyId, PlayerId)>, lobbies: &mut HashMap<LobbyId, Lobby>) {
-   if let Some((old_lobby_id, old_player_id)) = connected_lobby_player {
-      if let Some(old_lobby) = lobbies.get_mut(&old_lobby_id) {
-         if old_lobby.game.is_none() {
-            if old_lobby.owner == *old_player_id {
-               for (_, old_player) in old_lobby.players.iter_mut().filter(|(id, _)| *id != old_player_id) {
-                  match old_player.connection {
-                     Connection::Connected(ref mut sender) => {
-                        let _ =
-                           serialize_and_send(sender, &PalaceOutMessage::LobbyCloseEvent(LobbyCloseEvent::OwnerLeft));
+fn disconnect_old_player(connected_user: &ConnectedUser, lobbies: &mut HashMap<LobbyId, Lobby>, our_sender_id: u32) {
+   match connected_user {
+      ConnectedUser::Player((old_lobby_id, old_player_id)) => {
+         if let Some(old_lobby) = lobbies.get_mut(&old_lobby_id) {
+            if old_lobby.game.is_none() {
+               if old_lobby.owner == *old_player_id {
+                  for (_, old_player) in old_lobby.players.iter_mut().filter(|(id, _)| *id != old_player_id) {
+                     match old_player.connection {
+                        Connection::Connected(ref mut sender) => {
+                           let _ =
+                              serialize_and_send(sender, &PalaceOutMessage::LobbyCloseEvent(LobbyCloseEvent::OwnerLeft));
+                        }
+                        Connection::Disconnected(_) => (),
+                        Connection::Ai(_) => (),
                      }
-                     Connection::Disconnected(_) => (),
-                     Connection::Ai(_) => (),
                   }
+                  lobbies.remove(&old_lobby_id);
+               } else {
+                  remove_player(*old_player_id, old_lobby, None);
                }
-               lobbies.remove(&old_lobby_id);
-            } else {
-               remove_player(*old_player_id, old_lobby, None);
+            } else if let Some(old_player) = old_lobby.players.get_mut(&old_player_id) {
+               old_player.connection = Connection::Disconnected(Instant::now());
             }
-         } else if let Some(old_player) = old_lobby.players.get_mut(&old_player_id) {
-            old_player.connection = Connection::Disconnected(Instant::now());
+         }
+      }
+      ConnectedUser::Spectator(old_lobby_id) => {
+         if let Some(old_lobby) = lobbies.get_mut(&old_lobby_id) {
+            old_lobby.spectators.retain(|x| x.connection_id() != our_sender_id);
          }
       }
    }
@@ -930,6 +948,6 @@ pub fn run_server(address: &'static str) {
    ws::listen(address, |out| Server {
       out,
       lobbies: lobbies.clone(),
-      connected_lobby_player: None,
+      connected_user: None,
    }).unwrap()
 }
