@@ -48,6 +48,19 @@ pub(crate) enum JoinLobbyError {
    EmptyPlayerName,
 }
 
+#[derive(Serialize)]
+pub(crate) struct SpectateLobbyResponse<'a> {
+   pub lobby_players: Vec<&'a str>,
+   pub max_players: u8,
+   pub num_spectators: u8,
+}
+
+#[derive(Serialize)]
+pub(crate) enum SpectateLobbyError {
+   LobbyNotFound,
+   SpectateLobbyFull,
+}
+
 #[derive(Copy, Clone, Deserialize)]
 pub(crate) struct StartGameMessage {
    pub lobby_id: LobbyId,
@@ -74,6 +87,11 @@ pub(crate) struct MakePlayMessage {
 pub(crate) struct GameStartEvent<'a> {
    pub hand: &'a [Card],
    pub turn_number: u8,
+   pub players: &'a HashMap<u8, String>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct SpectateGameStartEvent<'a> {
    pub players: &'a HashMap<u8, String>,
 }
 
@@ -179,6 +197,7 @@ pub(crate) enum PalaceInMessage {
    Reconnect(ReconnectMessage),
    RequestAi(RequestAiMessage),
    KickPlayer(KickPlayerMessage),
+   SpectateLobby(LobbyId),
 }
 
 #[derive(Serialize)]
@@ -192,9 +211,11 @@ pub(crate) enum PalaceOutMessage<'a> {
    ReconnectResponse(Result<(), ReconnectError>),
    RequestAiResponse(Result<(), RequestAiError>),
    KickPlayerResponse(Result<(), KickPlayerError>),
+   SpectateLobbyResponse(Result<SpectateLobbyResponse<'a>, SpectateLobbyError>),
    PublicGameStateEvent(&'a PublicGameState<'a>),
    HandEvent(&'a [Card]),
    GameStartEvent(GameStartEvent<'a>),
+   SpectateGameStartEvent(SpectateGameStartEvent<'a>),
    PlayerJoinEvent(PlayerJoinEvent<'a>),
    PlayerLeaveEvent(PlayerLeaveEvent),
    LobbyCloseEvent(LobbyCloseEvent),

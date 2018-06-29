@@ -340,6 +340,13 @@ impl Server {
             let response = PalaceOutMessage::KickPlayerResponse(self.do_kick_player(&message));
             serialize_and_send(&mut self.out, &response)
          }
+         PalaceInMessage::SpectateLobby(message) => {
+            // See note on JoinLobby above
+            match self.do_spectate_lobby(message) {
+               Ok(()) => Ok(()),
+               Err(e) => serialize_and_send(&mut self.out, &PalaceOutMessage::SpectateLobbyResponse(Err(e))),
+            }
+         }
       }
    }
 
@@ -504,6 +511,55 @@ impl Server {
       Ok(())
    }
 
+   fn do_spectate_lobby(&mut self, message: LobbyId) -> Result<(), SpectateLobbyError> {
+      let mut lobbies = self.lobbies.write().unwrap();
+      if let Some(lobby) = lobbies.get_mut(&message) {
+         if lobby.spectators.len() as u8 == std::u8::MAX {
+            return Err(SpectateLobbyError::SpectateLobbyFull);
+         }
+
+         if lobby.game.is_some() {
+            // TODO SEND PGS, SGSE, player turns => names
+         } else {
+            let lobby_players = {
+               let mut lobby_players: Vec<&str> = vec![lobby.players[&lobby.owner].name.as_ref()];
+               lobby_players.extend(
+                  lobby
+                     .players
+                     .iter()
+                     .filter(|(id, _)| **id != lobby.owner)
+                     .map(|(_, p)| p.name.as_str()),
+               );
+               lobby_players
+            };
+
+            let _ = serialize_and_send(
+               &mut self.out,
+               &PalaceOutMessage::SpectateLobbyResponse(Ok(SpectateLobbyResponse {
+                  lobby_players,
+                  max_players: lobby.max_players,
+                  num_spectators: lobby.spectators.len() as u8,
+               })),
+            );
+
+            lobby.spectators.push(self.out.clone());
+
+            update_connected_player_info(
+               &mut self.connected_user,
+               &mut lobbies,
+               ConnectedUser::Spectator(message),
+               self.out.connection_id(),
+            );
+         }
+
+         // TODO SEND SJE
+
+         Ok(())
+      } else {
+         Err(SpectateLobbyError::LobbyNotFound)
+      }
+   }
+
    fn do_start_game(&mut self, message: StartGameMessage) -> Result<(), StartGameError> {
       let mut lobbies = self.lobbies.write().unwrap();
       if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
@@ -566,6 +622,14 @@ impl Server {
                   ai.on_game_state_update(&public_gs);
                }
             }
+         }
+         for sender in &mut lobby.spectators {
+            let _ = serialize_and_send(
+               sender,
+               &PalaceOutMessage::SpectateGameStartEvent(SpectateGameStartEvent {
+                  players: &players,
+               }),
+            );
          }
 
          Ok(())
