@@ -737,6 +737,9 @@ fn disconnect_old_player(connected_user: &ConnectedUser, lobbies: &mut HashMap<L
                         Connection::Ai(_) => (),
                      }
                   }
+                  for sender in &mut old_lobby.spectators {
+                     let _ = serialize_and_send(sender, &PalaceOutMessage::LobbyCloseEvent(LobbyCloseEvent::OwnerLeft));
+                  }
                   lobbies.remove(&old_lobby_id);
                } else {
                   remove_player(*old_player_id, old_lobby, None);
@@ -823,6 +826,16 @@ fn add_player(new_player: Player, player_id: PlayerId, lobby: &mut Lobby) {
          Connection::Ai(_) => (),
       }
    }
+   for sender in &mut lobby.spectators {
+      let _ = serialize_and_send(
+         sender,
+         &PalaceOutMessage::PlayerJoinEvent(PlayerJoinEvent {
+            total_num_players: new_num_players,
+            new_player_name: &new_player_name,
+            slot: turn_number,
+         }),
+      );
+   }
 }
 
 fn remove_player(old_player_id: PlayerId, lobby: &mut Lobby, opt_event: Option<LobbyCloseEvent>) {
@@ -856,6 +869,15 @@ fn remove_player(old_player_id: PlayerId, lobby: &mut Lobby, opt_event: Option<L
             Connection::Disconnected(_) => (),
             Connection::Ai(_) => (),
          }
+      }
+      for sender in &mut lobby.spectators {
+         let _ = serialize_and_send(
+            sender,
+            &PalaceOutMessage::PlayerLeaveEvent(PlayerLeaveEvent {
+               total_num_players: new_num_players,
+               slot: old_player.turn_number,
+            }),
+         );
       }
    }
 }
