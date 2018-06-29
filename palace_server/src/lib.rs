@@ -421,7 +421,12 @@ impl Server {
          },
       );
 
-      update_connected_player_info(&mut self.connected_user, &mut lobbies, ConnectedUser::Player((lobby_id, player_id)), self.out.connection_id());
+      update_connected_player_info(
+         &mut self.connected_user,
+         &mut lobbies,
+         ConnectedUser::Player((lobby_id, player_id)),
+         self.out.connection_id(),
+      );
 
       Ok(NewLobbyResponse {
          player_id,
@@ -730,8 +735,10 @@ fn disconnect_old_player(connected_user: &ConnectedUser, lobbies: &mut HashMap<L
                   for (_, old_player) in old_lobby.players.iter_mut().filter(|(id, _)| *id != old_player_id) {
                      match old_player.connection {
                         Connection::Connected(ref mut sender) => {
-                           let _ =
-                              serialize_and_send(sender, &PalaceOutMessage::LobbyCloseEvent(LobbyCloseEvent::OwnerLeft));
+                           let _ = serialize_and_send(
+                              sender,
+                              &PalaceOutMessage::LobbyCloseEvent(LobbyCloseEvent::OwnerLeft),
+                           );
                         }
                         Connection::Disconnected(_) => (),
                         Connection::Ai(_) => (),
@@ -807,10 +814,7 @@ fn add_player(new_player: Player, player_id: PlayerId, lobby: &mut Lobby) {
    lobby.players.insert(player_id, new_player);
 
    let new_num_players = lobby.players.len() as u8;
-   for (id, player) in &mut lobby.players {
-      if *id == player_id {
-         continue;
-      }
+   for (_, player) in lobby.players.iter_mut().filter(|(id, _)| **id != player_id) {
       match player.connection {
          Connection::Connected(ref mut sender) => {
             let _ = serialize_and_send(
