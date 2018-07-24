@@ -4,7 +4,7 @@
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
-extern crate pretty_env_logger;
+extern crate native_tls;
 extern crate rand;
 #[macro_use]
 extern crate serde_derive;
@@ -19,12 +19,17 @@ mod game;
 use ai::PalaceAi;
 use data::*;
 use game::GameState;
+use native_tls::{Identity, TlsAcceptor, TlsStream};
 use rand::Rng;
 use serde::{Deserialize, Deserializer, Serializer};
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::Read;
+use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use ws::{CloseCode, Handler, Handshake, Message, Sender};
+use ws::util::TcpStream;
 
 const TURN_TIMER_SECS: u64 = 50;
 const EMPTY_LOBBY_PRUNE_THRESHOLD_SECS: u64 = 30;
@@ -134,6 +139,7 @@ enum ConnectedUser {
 
 struct Server {
    out: Sender,
+   tls_acceptor: Rc<TlsAcceptor>,
    lobbies: Arc<RwLock<HashMap<LobbyId, Lobby>>>,
    connected_user: Option<ConnectedUser>,
 }
@@ -288,6 +294,10 @@ impl Handler for Server {
    fn on_open(&mut self, _: Handshake) -> ws::Result<()> {
       debug!("A connection opened");
       Ok(())
+   }
+
+   fn upgrade_ssl_server(&mut self, sock: TcpStream) -> ws::Result<TlsStream<TcpStream>>{
+       self.tls_acceptor.accept(sock).map_err(From::from)
    }
 }
 
@@ -969,7 +979,6 @@ fn serialize_and_send(s: &mut Sender, message: &PalaceOutMessage) -> ws::Result<
 }
 
 pub fn run_server(address: &'static str) {
-   pretty_env_logger::init();
    // @Performance this could be a concurrent hashmap
    let lobbies: Arc<RwLock<HashMap<LobbyId, Lobby>>> = Arc::new(RwLock::new(HashMap::new()));
 
@@ -1067,9 +1076,42 @@ pub fn run_server(address: &'static str) {
       });
    }
 
-   ws::listen(address, |out| Server {
-      out,
-      lobbies: lobbies.clone(),
-      connected_user: None,
-   }).unwrap()
+   let tls_acceptor = {
+      let mut file = File::open("identity.pfx").unwrap();
+      let mut identity = vec![];
+      file.read_to_end(&mut identity).unwrap();
+      let identity = Identity::from_pkcs12(&identity, "").unwrap();
+
+      let acceptor = TlsAcceptor::new(identity).unwrap();
+      Rc::new(acceptor)
+   };
+
+   let factory = Factory {
+      lobbies,
+      tls_acceptor,
+   };
+
+   ws::Builder::new().with_settings(ws::Settings {
+         encrypt_server: true,
+         tcp_nodelay: true,
+         .. ws::Settings::default()
+   }).build(factory).unwrap().listen(address).unwrap();
+}
+
+struct Factory {
+   lobbies: Arc<RwLock<HashMap<LobbyId, Lobby>>>,
+   tls_acceptor: Rc<TlsAcceptor>,
+}
+
+impl ws::Factory for Factory {
+    type Handler = Server;
+
+    fn connection_made(&mut self, ws: Sender) -> Server {
+        Server {
+            out: ws,
+            tls_acceptor: self.tls_acceptor.clone(),
+            lobbies: self.lobbies.clone(),
+            connected_user: None,
+        }
+    }
 }

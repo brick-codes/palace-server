@@ -6,6 +6,7 @@ authors = ["Richard McCormack <brick@brick.codes>"]
 [workspace]
 
 [dependencies]
+pretty_env_logger = "0.2"
 palace_server = { path = "palace_server" }
 
 [profile.release]
