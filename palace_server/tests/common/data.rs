@@ -159,6 +159,7 @@ pub struct NewLobbyMessage<'a> {
    pub password: &'a str,
    pub lobby_name: &'a str,
    pub player_name: &'a str,
+   pub turn_timer_secs: u8,
 }
 
 #[derive(Serialize)]

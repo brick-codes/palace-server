@@ -2,12 +2,18 @@ use game::{Card, PublicGameState};
 use std::collections::HashMap;
 use {LobbyDisplay, LobbyId, PlayerId};
 
+fn default_turn_timer_secs() -> u8 {
+   50
+}
+
 #[derive(Deserialize)]
 pub(crate) struct NewLobbyMessage {
    pub max_players: u8,
    pub password: String,
    pub lobby_name: String,
    pub player_name: String,
+   #[serde(default = "default_turn_timer_secs")]
+   pub turn_timer_secs: u8,
 }
 
 #[derive(Serialize)]

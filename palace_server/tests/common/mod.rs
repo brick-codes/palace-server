@@ -63,10 +63,10 @@ impl TestClient {
       }
    }
 
-   pub fn send(&mut self, message: OutMessage) {
+   pub fn send(&mut self, message: &OutMessage) {
       self
          .to_send_messages
-         .send(serde_json::to_vec(&message).unwrap())
+         .send(serde_json::to_vec(message).unwrap())
          .unwrap();
    }
 
@@ -88,11 +88,12 @@ impl TestClient {
    }
 
    pub fn new_lobby_named(&mut self, name: &str) -> (String, String) {
-      self.send(OutMessage::NewLobby(NewLobbyMessage {
+      self.send(&OutMessage::NewLobby(NewLobbyMessage {
          player_name: "TestClient",
          lobby_name: name,
          password: "foo",
          max_players: 4,
+         turn_timer_secs: 50,
       }));
       let nlr = self.get();
       match nlr {

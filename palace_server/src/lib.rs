@@ -26,8 +26,8 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use ws::{CloseCode, Handler, Handshake, Message, Sender};
 
-const TURN_TIMER_SECS: u64 = 50;
 const EMPTY_LOBBY_PRUNE_THRESHOLD_SECS: u64 = 30;
+
 
 #[derive(PartialEq, Eq, Hash, Serialize, Deserialize, Clone, Copy)]
 struct PlayerId(#[serde(serialize_with = "as_hex_str", deserialize_with = "hex_to_u128")] u128);
@@ -64,6 +64,7 @@ struct Lobby {
    owner: PlayerId,
    name: String,
    creation_time: Instant,
+   turn_timer: Duration,
 }
 
 impl Lobby {
@@ -425,6 +426,7 @@ impl Server {
             max_players: message.max_players,
             creation_time: Instant::now(),
             spectators: Vec::new(),
+            turn_timer: Duration::from_secs(u64::from(message.turn_timer_secs)),
          },
       );
 
@@ -983,11 +985,11 @@ pub fn run_server(address: &'static str) {
             let mut lobbies = thread_lobbies.write().unwrap();
             for lobby in lobbies.values_mut() {
                if let Some(ref mut gs) = lobby.game {
-                  if gs.cur_phase == game::Phase::Complete {
+                  if gs.cur_phase == game::Phase::Complete || lobby.turn_timer.as_secs() == 0 {
                      continue;
                   }
 
-                  if gs.last_turn_start.elapsed() >= Duration::from_secs(TURN_TIMER_SECS) {
+                  if gs.last_turn_start.elapsed() >= lobby.turn_timer {
                      // @Performance we do this and then throw it away if it's not a bot that isn't Random...
                      let mut players = HashMap::new();
                      for player in lobby.players.values() {

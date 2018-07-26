@@ -18,7 +18,7 @@ use timebomb::timeout_ms;
 fn lobbies_clean_up() {
    ensure_test_server_up();
 
-   const JUNK_LOBBY_NAME: &'static str = "JunkLobby";
+   const JUNK_LOBBY_NAME: &str = "JunkLobby";
 
    // Create a lobby
    {
@@ -32,7 +32,7 @@ fn lobbies_clean_up() {
    // Ensure lobby is cleaned up
    {
       let mut tc = TestClient::new();
-      tc.send(OutMessage::ListLobbies);
+      tc.send(&OutMessage::ListLobbies);
       let llr = tc.get();
       match llr {
          InMessage::ListLobbiesResponse(r) => assert!(r.iter().find(|x| x.name == JUNK_LOBBY_NAME).is_none()),
@@ -51,7 +51,7 @@ fn bots_join_lobby_after_request() {
 
    // Request 3 AI
    {
-      tc.send(OutMessage::RequestAi(RequestAiMessage {
+      tc.send(&OutMessage::RequestAi(RequestAiMessage {
          num_ai: 3,
          player_id: &player_id,
          lobby_id: &lobby_id,
@@ -82,7 +82,7 @@ fn kicking_player_new_player_reuse_id() {
 
    // Request some AI
    {
-      tc.send(OutMessage::RequestAi(RequestAiMessage {
+      tc.send(&OutMessage::RequestAi(RequestAiMessage {
          num_ai: 3,
          player_id: &player_id,
          lobby_id: &lobby_id,
@@ -107,7 +107,7 @@ fn kicking_player_new_player_reuse_id() {
 
    // Kick player
    {
-      tc.send(OutMessage::KickPlayer(KickPlayerMessage {
+      tc.send(&OutMessage::KickPlayer(KickPlayerMessage {
          slot: 2,
          player_id: &player_id,
          lobby_id: &lobby_id,
@@ -128,7 +128,7 @@ fn kicking_player_new_player_reuse_id() {
 
    // Request an AI, make sure it fills the empty slot
    {
-      tc.send(OutMessage::RequestAi(RequestAiMessage {
+      tc.send(&OutMessage::RequestAi(RequestAiMessage {
          num_ai: 1,
          player_id: &player_id,
          lobby_id: &lobby_id,
@@ -161,7 +161,7 @@ fn owner_leaving_closes_lobby() {
 
    // Join lobby
    {
-      player_tc.send(OutMessage::JoinLobby(JoinLobbyMessage {
+      player_tc.send(&OutMessage::JoinLobby(JoinLobbyMessage {
          lobby_id: &lobby_id,
          player_name: "TestClient",
          password: "foo",
@@ -196,7 +196,7 @@ fn afk_kick() {
 
    // Add AI
    {
-      tc.send(OutMessage::RequestAi(RequestAiMessage {
+      tc.send(&OutMessage::RequestAi(RequestAiMessage {
          player_id: &player_id,
          lobby_id: &lobby_id,
          num_ai: 1,
@@ -207,7 +207,7 @@ fn afk_kick() {
 
    // Start game
    {
-      tc.send(OutMessage::StartGame(StartGameMessage {
+      tc.send(&OutMessage::StartGame(StartGameMessage {
          player_id: &player_id,
          lobby_id: &lobby_id,
       }));
@@ -220,7 +220,7 @@ fn afk_kick() {
                assert!(reason == LobbyCloseEvent::Afk);
                break;
             }
-            _ => (),
+            _ => continue,
          }
       },
       60000,
