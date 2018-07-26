@@ -13,7 +13,7 @@ pub(crate) struct NewLobbyMessage {
    pub lobby_name: String,
    pub player_name: String,
    #[serde(default = "default_turn_timer_secs")]
-   pub turn_timer_secs: u8,
+   pub turn_timer: u8,
 }
 
 #[derive(Serialize)]
