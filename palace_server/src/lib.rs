@@ -428,7 +428,7 @@ impl Server {
             max_players: message.max_players,
             creation_time: Instant::now(),
             spectators: Vec::new(),
-            turn_timer: Duration::from_secs(u64::from(message.turn_timer_secs)),
+            turn_timer: Duration::from_secs(u64::from(message.turn_timer)),
          },
       );
 
