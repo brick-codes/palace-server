@@ -486,6 +486,7 @@ impl Server {
                lobby_players,
                max_players: lobby.max_players,
                num_spectators: lobby.spectators.len() as u8,
+               turn_timer: lobby.turn_timer.as_secs() as u8,
             })),
          );
 

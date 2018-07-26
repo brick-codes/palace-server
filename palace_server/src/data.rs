@@ -43,6 +43,7 @@ pub(crate) struct JoinLobbyResponse<'a> {
    pub lobby_players: Vec<&'a str>,
    pub max_players: u8,
    pub num_spectators: u8,
+   pub turn_timer: u8,
 }
 
 #[derive(Serialize)]
