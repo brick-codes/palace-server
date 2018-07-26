@@ -80,6 +80,7 @@ impl Lobby {
          age: self.creation_time.elapsed().as_secs(),
          lobby_id: *lobby_id,
          cur_spectators: self.spectators.len() as u8,
+         turn_timer: self.turn_timer.as_secs() as u8,
       }
    }
 }
@@ -96,6 +97,7 @@ pub(crate) struct LobbyDisplay<'a> {
    pub age: u64,
    pub lobby_id: LobbyId,
    pub cur_spectators: u8,
+   pub turn_timer: u8,
 }
 
 fn next_public_id(players_by_public_id: &HashMap<u8, PlayerId>) -> u8 {
