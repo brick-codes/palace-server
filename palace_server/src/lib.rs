@@ -1008,6 +1008,37 @@ pub fn run_server(address: &'static str) {
                   };
 
                   if gs.last_turn_start.elapsed() >= lobby.turn_timer || timed_out_or_kicked {
+                     // Update connection, if needed
+                     {
+                        let player = lobby.players.get_mut(&player_id).unwrap();
+                        match player.connection {
+                           Connection::Connected(ref mut sender) => {
+                              let _ = serialize_and_send(sender, &PalaceOutMessage::LobbyCloseEvent(LobbyCloseEvent::Afk));
+                              player.connection = Connection::Disconnected(DisconnectedState {
+                                 time: Instant::now(),
+                                 reason: DisconnectedReason::TimedOut,
+                              });
+                           }
+                           Connection::Disconnected(_) => (),
+                           Connection::Ai(ref mut ai) => {
+                              error!(
+                                 "Bot (strategy: {}) failed to take its turn within time limit",
+                                 ai.strategy_name()
+                              );
+                              if ai.strategy_name() != "Random" {
+                                 info!("Falling back to Random");
+                                 *ai = Box::new(ai::random::new());
+                                 ai.on_game_start(GameStartEvent {
+                                    hand: gs.get_hand(player.turn_number),
+                                    turn_number: player.turn_number,
+                                    players: &HashMap::new(), // Random doesn't need players
+                                 });
+                                 ai.on_game_state_update(&gs.public_state());
+                              }
+                           }
+                        }
+                     }
+
                      // Make a random play
                      match gs.cur_phase {
                         game::Phase::Setup => {
@@ -1035,35 +1066,6 @@ pub fn run_server(address: &'static str) {
                            report_make_play(gs, &mut lobby.players, player_id);
                         }
                         _ => unreachable!()
-                     }
-
-                     // Update connection, if needed
-                     let player = lobby.players.get_mut(&player_id).unwrap();
-                     match player.connection {
-                        Connection::Connected(ref mut sender) => {
-                           let _ = serialize_and_send(sender, &PalaceOutMessage::LobbyCloseEvent(LobbyCloseEvent::Afk));
-                           player.connection = Connection::Disconnected(DisconnectedState {
-                              time: Instant::now(),
-                              reason: DisconnectedReason::TimedOut,
-                           });
-                        }
-                        Connection::Disconnected(_) => (),
-                        Connection::Ai(ref mut ai) => {
-                           error!(
-                              "Bot (strategy: {}) failed to take its turn within time limit",
-                              ai.strategy_name()
-                           );
-                           if ai.strategy_name() != "Random" {
-                              info!("Falling back to Random");
-                              *ai = Box::new(ai::random::new());
-                              ai.on_game_start(GameStartEvent {
-                                 hand: gs.get_hand(player.turn_number),
-                                 turn_number: player.turn_number,
-                                 players: &HashMap::new(), // Random doesn't need players
-                              });
-                              ai.on_game_state_update(&gs.public_state());
-                           }
-                        }
                      }
                   }
                }
