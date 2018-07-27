@@ -151,6 +151,7 @@ pub enum InMessage {
    LobbyCloseEvent(LobbyCloseEvent),
    GameStartEvent(GameStartEvent),
    PublicGameStateEvent(PublicGameState),
+   HandEvent(Vec<Card>),
 }
 
 #[derive(Serialize)]
