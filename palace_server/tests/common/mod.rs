@@ -91,7 +91,7 @@ impl TestClient {
       self.send(&OutMessage::NewLobby(NewLobbyMessage {
          player_name: "TestClient",
          lobby_name: name,
-         password: "foo",
+         password: "",
          max_players: 4,
          turn_timer_secs: 50,
       }));

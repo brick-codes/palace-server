@@ -164,7 +164,7 @@ fn owner_leaving_closes_lobby() {
       player_tc.send(&OutMessage::JoinLobby(JoinLobbyMessage {
          lobby_id: &lobby_id,
          player_name: "TestClient",
-         password: "foo",
+         password: "",
       }));
       match player_tc.get() {
          InMessage::JoinLobbyResponse(r) => assert!(r.is_ok()),
