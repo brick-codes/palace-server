@@ -1115,7 +1115,13 @@ pub fn run_server(address: &'static str) {
                            return true;
                         }
                      }
-                     Connection::Ai(_) => (),
+                     Connection::Ai(_) => {
+                        if let Some(ref game) = lobby.game {
+                           if game.cur_phase != game::Phase::Complete {
+                              return true;
+                           }
+                        }
+                     }
                   }
                }
                false
