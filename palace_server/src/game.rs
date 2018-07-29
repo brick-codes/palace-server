@@ -3,7 +3,7 @@ use std::time::Instant;
 
 const HAND_SIZE: usize = 6;
 
-#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, PartialOrd, Eq, Ord)]
 enum CardSuit {
    Clubs,
    Diamonds,
@@ -80,7 +80,7 @@ impl GameState {
          .iter()
          .cycle()
          .take(num_players as usize * VALUES.len())
-         .zip(SUITS.iter().cycle())
+         .zip(SUITS.iter().take(num_players as usize).cycle())
          .map(|(value, suit)| Card {
             suit: *suit,
             value: *value,
@@ -455,5 +455,21 @@ mod test {
       assert!(game.play_card(CardValue::Eight).is_ok());
       assert_eq!(game.pile_cards.len(), 0);
       assert_eq!(game.active_player, 3);
+   }
+
+   #[test]
+   fn less_than_4_players_less_than_4_suits() {
+      for i in 2..=4 {
+         let game = GameState::new(i);
+         let mut seen_suits: Vec<CardSuit> = vec![];
+         for hand in game.hands.iter() {
+            for card in hand {
+               seen_suits.push(card.suit);
+            }
+         }
+         seen_suits.sort();
+         seen_suits.dedup();
+         assert_eq!(seen_suits.len() as u8, i);
+      }
    }
 }
