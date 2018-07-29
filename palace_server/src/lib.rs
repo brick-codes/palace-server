@@ -1125,7 +1125,7 @@ pub fn run_server(address: &'static str) {
          {
                let mut lobbies = thread_lobbies.write().unwrap();
 
-               for lobby in lobbies.values_mut().filter(|l| l.creation_time.elapsed() > Duration::from_secs(10)) {
+               for lobby in lobbies.values_mut().filter(|l| l.creation_time.elapsed() > Duration::from_secs(10) && (l.players.len() as u8) < l.max_players) {
                   let player_id = PlayerId(rand::random());
                   let ai: Box<PalaceAi + Send + Sync> = Box::new(ai::random::new());
                   add_player(

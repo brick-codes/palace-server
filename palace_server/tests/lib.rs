@@ -233,7 +233,7 @@ fn clandestine_bots_join_lobby() {
 
    let mut tc = TestClient::new();
 
-   let (player_id, lobby_id) = tc.new_lobby();
+   let (_player_id, _lobby_id) = tc.new_lobby();
 
    timeout_ms(
       move || loop {
