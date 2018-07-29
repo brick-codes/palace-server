@@ -28,7 +28,6 @@ use ws::{CloseCode, Handler, Handshake, Message, Sender};
 
 const EMPTY_LOBBY_PRUNE_THRESHOLD_SECS: u64 = 30;
 
-
 #[derive(PartialEq, Eq, Hash, Serialize, Deserialize, Clone, Copy)]
 struct PlayerId(#[serde(serialize_with = "as_hex_str", deserialize_with = "hex_to_u128")] u128);
 
@@ -631,9 +630,7 @@ impl Server {
          for sender in &mut lobby.spectators {
             let _ = serialize_and_send(
                sender,
-               &PalaceOutMessage::SpectateGameStartEvent(SpectateGameStartEvent {
-                  players: &players,
-               }),
+               &PalaceOutMessage::SpectateGameStartEvent(SpectateGameStartEvent { players: &players }),
             );
          }
 
@@ -713,7 +710,7 @@ impl Server {
          if let Some(player) = lobby.players.get_mut(&message.player_id) {
             if let Connection::Disconnected(ds) = &player.connection {
                if ds.reason == DisconnectedReason::Kicked {
-                  return Err(ReconnectError::PlayerKicked)
+                  return Err(ReconnectError::PlayerKicked);
                }
             }
 
@@ -1003,7 +1000,7 @@ pub fn run_server(address: &'static str) {
                   let timed_out_or_kicked = match &lobby.players[&player_id].connection {
                      Connection::Disconnected(ds) => {
                         ds.reason == DisconnectedReason::Kicked || ds.reason == DisconnectedReason::TimedOut
-                     },
+                     }
                      _ => false,
                   };
 
@@ -1013,7 +1010,8 @@ pub fn run_server(address: &'static str) {
                         let player = lobby.players.get_mut(&player_id).unwrap();
                         match player.connection {
                            Connection::Connected(ref mut sender) => {
-                              let _ = serialize_and_send(sender, &PalaceOutMessage::LobbyCloseEvent(LobbyCloseEvent::Afk));
+                              let _ =
+                                 serialize_and_send(sender, &PalaceOutMessage::LobbyCloseEvent(LobbyCloseEvent::Afk));
                               player.connection = Connection::Disconnected(DisconnectedState {
                                  time: Instant::now(),
                                  reason: DisconnectedReason::TimedOut,
@@ -1050,7 +1048,8 @@ pub fn run_server(address: &'static str) {
                            });
                            ai.on_game_state_update(&gs.public_state());
                            let faceup_three = ai.choose_three_faceup();
-                           gs.choose_three_faceup(faceup_three.0, faceup_three.1, faceup_three.2).unwrap();
+                           gs.choose_three_faceup(faceup_three.0, faceup_three.1, faceup_three.2)
+                              .unwrap();
                            report_choose_faceup(gs, &mut lobby.players, player_id);
                         }
                         game::Phase::Play => {
@@ -1065,7 +1064,7 @@ pub fn run_server(address: &'static str) {
                            gs.make_play(play).unwrap();
                            report_make_play(gs, &mut lobby.players, player_id);
                         }
-                        _ => unreachable!()
+                        _ => unreachable!(),
                      }
                   }
                }
@@ -1123,21 +1122,25 @@ pub fn run_server(address: &'static str) {
 
          // Fill empty slots
          {
-               let mut lobbies = thread_lobbies.write().unwrap();
+            let mut lobbies = thread_lobbies.write().unwrap();
 
-               for lobby in lobbies.values_mut().filter(|l| l.creation_time.elapsed() > Duration::from_secs(10) && (l.players.len() as u8) < l.max_players) {
-                  let player_id = PlayerId(rand::random());
-                  let ai: Box<PalaceAi + Send + Sync> = Box::new(ai::random::new());
-                  add_player(
-                     Player {
-                        name: ai::get_bot_name_clandestine(),
-                        connection: Connection::Ai(ai),
-                        turn_number: next_public_id(&lobby.players_by_turn_num),
-                     },
-                     player_id,
-                     lobby,
-                  );
-               }
+            for lobby in lobbies.values_mut().filter(|l| {
+               l.creation_time.elapsed() > Duration::from_secs(10)
+                  && (l.players.len() as u8) < l.max_players
+                  && l.password.len() == 0
+            }) {
+               let player_id = PlayerId(rand::random());
+               let ai: Box<PalaceAi + Send + Sync> = Box::new(ai::random::new());
+               add_player(
+                  Player {
+                     name: ai::get_bot_name_clandestine(),
+                     connection: Connection::Ai(ai),
+                     turn_number: next_public_id(&lobby.players_by_turn_num),
+                  },
+                  player_id,
+                  lobby,
+               );
+            }
          }
 
          // Create new lobbies

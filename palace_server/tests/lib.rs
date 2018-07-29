@@ -240,10 +240,10 @@ fn clandestine_bots_join_lobby() {
          match tc.get() {
             InMessage::PlayerJoinEvent(_) => {
                break;
-            },
+            }
             _ => assert!(false),
          }
       },
-      21000
+      21000,
    );
 }
