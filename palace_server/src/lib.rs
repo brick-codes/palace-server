@@ -1120,6 +1120,8 @@ pub fn run_server(address: &'static str) {
                            if game.cur_phase != game::Phase::Complete {
                               return true;
                            }
+                        } else {
+                           return true;
                         }
                      }
                   }
