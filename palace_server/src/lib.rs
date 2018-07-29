@@ -403,33 +403,14 @@ impl Server {
       }
 
       let mut lobbies = self.lobbies.write().unwrap();
-      let lobby_id = LobbyId(rand::random());
-      let player_id = PlayerId(rand::random());
-      let mut players = HashMap::new();
-      let mut players_by_public_id = HashMap::new();
-      players.insert(
-         player_id,
-         Player {
-            name: message.player_name,
-            connection: Connection::Connected(self.out.clone()),
-            turn_number: 0,
-         },
-      );
-      players_by_public_id.insert(0, player_id);
-      lobbies.insert(
-         lobby_id,
-         Lobby {
-            players,
-            players_by_turn_num: players_by_public_id,
-            game: None,
-            password: message.password,
-            name: message.lobby_name,
-            owner: player_id,
-            max_players: message.max_players,
-            creation_time: Instant::now(),
-            spectators: Vec::new(),
-            turn_timer: Duration::from_secs(u64::from(message.turn_timer)),
-         },
+      let (lobby_id, player_id) = create_lobby(
+         &mut lobbies,
+         Connection::Connected(self.out.clone()),
+         message.lobby_name,
+         message.player_name,
+         message.password,
+         message.max_players,
+         message.turn_timer,
       );
 
       update_connected_player_info(
@@ -783,6 +764,47 @@ impl Server {
    }
 }
 
+fn create_lobby(
+   lobbies: &mut HashMap<LobbyId, Lobby>,
+   connection: Connection,
+   lobby_name: String,
+   player_name: String,
+   password: String,
+   max_players: u8,
+   turn_timer: u8,
+) -> (LobbyId, PlayerId) {
+   let lobby_id = LobbyId(rand::random());
+   let player_id = PlayerId(rand::random());
+   let mut players = HashMap::new();
+   let mut players_by_public_id = HashMap::new();
+   players.insert(
+      player_id,
+      Player {
+         name: player_name,
+         connection,
+         turn_number: 0,
+      },
+   );
+   players_by_public_id.insert(0, player_id);
+   lobbies.insert(
+      lobby_id,
+      Lobby {
+         players,
+         players_by_turn_num: players_by_public_id,
+         game: None,
+         password,
+         name: lobby_name,
+         owner: player_id,
+         max_players,
+         creation_time: Instant::now(),
+         spectators: Vec::new(),
+         turn_timer: Duration::from_secs(u64::from(turn_timer)),
+      },
+   );
+
+   (lobby_id, player_id)
+}
+
 fn update_connected_player_info(
    connected_user: &mut Option<ConnectedUser>,
    lobbies: &mut HashMap<LobbyId, Lobby>,
@@ -1120,30 +1142,39 @@ pub fn run_server(address: &'static str) {
       std::thread::spawn(move || loop {
          std::thread::sleep(Duration::from_millis(rand::thread_rng().gen_range(100, 10000)));
 
-         // Fill empty slots
-         {
-            let mut lobbies = thread_lobbies.write().unwrap();
+         let mut lobbies = thread_lobbies.write().unwrap();
 
-            for lobby in lobbies.values_mut().filter(|l| {
-               l.creation_time.elapsed() > Duration::from_secs(10)
-                  && (l.players.len() as u8) < l.max_players
-                  && l.password.len() == 0
-            }) {
-               let player_id = PlayerId(rand::random());
-               let ai: Box<PalaceAi + Send + Sync> = Box::new(ai::random::new());
-               add_player(
-                  Player {
-                     name: ai::get_bot_name_clandestine(),
-                     connection: Connection::Ai(ai),
-                     turn_number: next_public_id(&lobby.players_by_turn_num),
-                  },
-                  player_id,
-                  lobby,
-               );
-            }
+         // Fill empty slots
+         for lobby in lobbies.values_mut().filter(|l| {
+            l.creation_time.elapsed() > Duration::from_secs(10)
+               && (l.players.len() as u8) < l.max_players
+               && l.password.len() == 0
+         }) {
+            let player_id = PlayerId(rand::random());
+            let ai: Box<PalaceAi + Send + Sync> = Box::new(ai::random::new());
+            add_player(
+               Player {
+                  name: ai::get_bot_name_clandestine(),
+                  connection: Connection::Ai(ai),
+                  turn_number: next_public_id(&lobby.players_by_turn_num),
+               },
+               player_id,
+               lobby,
+            );
          }
 
          // Create new lobbies
+         if lobbies.len() < 10 {
+            create_lobby(
+               &mut lobbies,
+               Connection::Ai(Box::new(ai::random::new())),
+               "botto grotto".into(),
+               ai::get_bot_name_clandestine(),
+               "".into(),
+               4,
+               data::default_turn_timer_secs(),
+            );
+         }
       });
    }
 
