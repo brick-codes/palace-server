@@ -560,60 +560,7 @@ impl Server {
             return Err(StartGameError::LessThanTwoPlayers);
          }
 
-         let num_players = lobby.players.len() as u8;
-         let gs = GameState::new(num_players);
-         lobby.game = Some(gs);
-
-         let public_gs = lobby.game.as_ref().unwrap().public_state();
-
-         let mut turn_numbers: Vec<u8> = (0..num_players).collect();
-         rand::thread_rng().shuffle(&mut turn_numbers);
-         let mut turn_numbers = turn_numbers.into_iter();
-
-         let mut players = HashMap::new();
-         // Assign everyone turn numbers
-         for (id, player) in &mut lobby.players {
-            player.turn_number = turn_numbers.next().unwrap();
-            lobby.players_by_turn_num.insert(player.turn_number, *id);
-            // @Performance: we can avoid cloning here
-            // because we don't modify the hashmap before we send the data.
-            // the problem is convincing that to the rust compiler
-            // which sees us mutably borrowing the hashmap
-            // (to send data out). So, use unsafe?
-            players.insert(player.turn_number, player.name.clone());
-         }
-
-         // Send out game start events
-         for player in lobby.players.values_mut() {
-            match player.connection {
-               Connection::Connected(ref mut sender) => {
-                  let _ = serialize_and_send(
-                     sender,
-                     &PalaceOutMessage::GameStartEvent(GameStartEvent {
-                        hand: lobby.game.as_ref().unwrap().get_hand(player.turn_number),
-                        turn_number: player.turn_number,
-                        players: &players,
-                     }),
-                  );
-                  let _ = serialize_and_send(sender, &PalaceOutMessage::PublicGameStateEvent(&public_gs));
-               }
-               Connection::Disconnected(_) => (),
-               Connection::Ai(ref mut ai) => {
-                  ai.on_game_start(GameStartEvent {
-                     hand: lobby.game.as_ref().unwrap().get_hand(player.turn_number),
-                     turn_number: player.turn_number,
-                     players: &players,
-                  });
-                  ai.on_game_state_update(&public_gs);
-               }
-            }
-         }
-         for sender in &mut lobby.spectators {
-            let _ = serialize_and_send(
-               sender,
-               &PalaceOutMessage::SpectateGameStartEvent(SpectateGameStartEvent { players: &players }),
-            );
-         }
+         start_game(lobby);
 
          Ok(())
       } else {
@@ -803,6 +750,63 @@ fn create_lobby(
    );
 
    (lobby_id, player_id)
+}
+
+fn start_game(lobby: &mut Lobby) {
+   let num_players = lobby.players.len() as u8;
+   let gs = GameState::new(num_players);
+   lobby.game = Some(gs);
+
+   let public_gs = lobby.game.as_ref().unwrap().public_state();
+
+   let mut turn_numbers: Vec<u8> = (0..num_players).collect();
+   rand::thread_rng().shuffle(&mut turn_numbers);
+   let mut turn_numbers = turn_numbers.into_iter();
+
+   let mut players = HashMap::new();
+   // Assign everyone turn numbers
+   for (id, player) in &mut lobby.players {
+      player.turn_number = turn_numbers.next().unwrap();
+      lobby.players_by_turn_num.insert(player.turn_number, *id);
+      // @Performance: we can avoid cloning here
+      // because we don't modify the hashmap before we send the data.
+      // the problem is convincing that to the rust compiler
+      // which sees us mutably borrowing the hashmap
+      // (to send data out). So, use unsafe?
+      players.insert(player.turn_number, player.name.clone());
+   }
+
+   // Send out game start events
+   for player in lobby.players.values_mut() {
+      match player.connection {
+         Connection::Connected(ref mut sender) => {
+            let _ = serialize_and_send(
+               sender,
+               &PalaceOutMessage::GameStartEvent(GameStartEvent {
+                  hand: lobby.game.as_ref().unwrap().get_hand(player.turn_number),
+                  turn_number: player.turn_number,
+                  players: &players,
+               }),
+            );
+            let _ = serialize_and_send(sender, &PalaceOutMessage::PublicGameStateEvent(&public_gs));
+         }
+         Connection::Disconnected(_) => (),
+         Connection::Ai(ref mut ai) => {
+            ai.on_game_start(GameStartEvent {
+               hand: lobby.game.as_ref().unwrap().get_hand(player.turn_number),
+               turn_number: player.turn_number,
+               players: &players,
+            });
+            ai.on_game_state_update(&public_gs);
+         }
+      }
+   }
+   for sender in &mut lobby.spectators {
+      let _ = serialize_and_send(
+         sender,
+         &PalaceOutMessage::SpectateGameStartEvent(SpectateGameStartEvent { players: &players }),
+      );
+   }
 }
 
 fn update_connected_player_info(
@@ -1182,6 +1186,14 @@ pub fn run_server(address: &'static str) {
                4,
                data::default_turn_timer_secs(),
             );
+         }
+
+         // Start full lobbies that are owned by bots
+         for lobby in lobbies.values_mut().filter(|l| {
+            l.players.len() as u8 == l.max_players
+               && l.players[&l.owner].is_ai()
+         }) {
+            start_game(lobby);
          }
       });
    }
