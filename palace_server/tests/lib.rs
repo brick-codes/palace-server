@@ -226,3 +226,24 @@ fn afk_kick() {
       60000,
    );
 }
+
+#[test]
+fn clandestine_bots_join_lobby() {
+   ensure_test_server_up();
+
+   let mut tc = TestClient::new();
+
+   let (player_id, lobby_id) = tc.new_lobby();
+
+   timeout_ms(
+      move || loop {
+         match tc.get() {
+            InMessage::PlayerJoinEvent(_) => {
+               break;
+            },
+            _ => assert!(false),
+         }
+      },
+      21000
+   );
+}

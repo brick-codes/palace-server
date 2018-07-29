@@ -1115,6 +1115,35 @@ pub fn run_server(address: &'static str) {
       });
    }
 
+   // Clandestine AI
+   {
+      let thread_lobbies = lobbies.clone();
+      std::thread::spawn(move || loop {
+         std::thread::sleep(Duration::from_millis(rand::thread_rng().gen_range(100, 10000)));
+
+         // Fill empty slots
+         {
+               let mut lobbies = thread_lobbies.write().unwrap();
+
+               for lobby in lobbies.values_mut().filter(|l| l.creation_time.elapsed() > Duration::from_secs(10)) {
+                  let player_id = PlayerId(rand::random());
+                  let ai: Box<PalaceAi + Send + Sync> = Box::new(ai::random::new());
+                  add_player(
+                     Player {
+                        name: ai::get_bot_name_clandestine(),
+                        connection: Connection::Ai(ai),
+                        turn_number: next_public_id(&lobby.players_by_turn_num),
+                     },
+                     player_id,
+                     lobby,
+                  );
+               }
+         }
+
+         // Create new lobbies
+      });
+   }
+
    ws::listen(address, |out| Server {
       out,
       lobbies: lobbies.clone(),
