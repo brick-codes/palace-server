@@ -30,7 +30,10 @@ pub(crate) trait PalaceAi {
 }
 
 pub(crate) fn get_bot_name() -> String {
-   format!("BOT {}", rand::thread_rng().choose(&NAMES).unwrap())
+   let mut name = format!("BOT {}", rand::thread_rng().choose(&NAMES).unwrap());
+   name.truncate(::PLAYER_NAME_LIMIT);
+
+   name
 }
 
 pub(crate) fn get_bot_name_clandestine() -> String {
@@ -63,5 +66,9 @@ pub(crate) fn get_bot_name_clandestine() -> String {
       3 => rand::thread_rng().gen_range(1980, 2001).to_string(),
       _ => unreachable!(),
    };
-   format!("{}{}", base, suffix)
+
+   let mut name = format!("{}{}", base, suffix);
+   name.truncate(::PLAYER_NAME_LIMIT);
+
+   name
 }
