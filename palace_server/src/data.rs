@@ -60,6 +60,7 @@ pub(crate) struct SpectateLobbyResponse<'a> {
    pub lobby_players: Vec<&'a str>,
    pub max_players: u8,
    pub num_spectators: u8,
+   pub turn_timer: u8,
 }
 
 #[derive(Serialize)]
@@ -233,4 +234,6 @@ pub(crate) enum PalaceOutMessage<'a> {
    PlayerJoinEvent(PlayerJoinEvent<'a>),
    PlayerLeaveEvent(PlayerLeaveEvent),
    LobbyCloseEvent(LobbyCloseEvent),
+   SpectatorJoinEvent(()),
+   SpectatorLeaveEvent(()),
 }

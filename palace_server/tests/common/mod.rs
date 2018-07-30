@@ -79,8 +79,7 @@ impl TestClient {
          .to_send_messages
          .send(Vec::from(
             "This message will be unrecognized, causing the connection to end",
-         ))
-         .unwrap();
+         )).unwrap();
    }
 
    pub fn new_lobby(&mut self) -> (String, String) {

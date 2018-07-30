@@ -503,41 +503,71 @@ impl Server {
             return Err(SpectateLobbyError::SpectateLobbyFull);
          }
 
-         if lobby.game.is_some() {
-            // TODO SEND PGS, SGSE, player turns => names
-         } else {
-            let lobby_players = {
-               let mut lobby_players: Vec<&str> = vec![lobby.players[&lobby.owner].name.as_ref()];
-               lobby_players.extend(
-                  lobby
-                     .players
-                     .iter()
-                     .filter(|(id, _)| **id != lobby.owner)
-                     .map(|(_, p)| p.name.as_str()),
-               );
-               lobby_players
-            };
-
-            let _ = serialize_and_send(
-               &mut self.out,
-               &PalaceOutMessage::SpectateLobbyResponse(Ok(SpectateLobbyResponse {
-                  lobby_players,
-                  max_players: lobby.max_players,
-                  num_spectators: lobby.spectators.len() as u8,
-               })),
-            );
-
-            lobby.spectators.push(self.out.clone());
-
-            update_connected_player_info(
-               &mut self.connected_user,
-               &mut lobbies,
-               ConnectedUser::Spectator(message),
-               self.out.connection_id(),
-            );
+         let mut players = HashMap::new();
+         for player in lobby.players.values() {
+            players.insert(player.turn_number, player.name.clone());
          }
 
-         // TODO SEND SJE
+         if lobby.game.is_some() {
+            if let Some(ref gs) = lobby.game {
+               let _ = serialize_and_send(
+                  &mut self.out,
+                  &PalaceOutMessage::SpectateGameStartEvent(SpectateGameStartEvent { players: &players }),
+               );
+               let _ = serialize_and_send(
+                  &mut self.out,
+                  &PalaceOutMessage::PublicGameStateEvent(&gs.public_state()),
+               );
+            }
+         }
+
+         let lobby_players = {
+            let mut lobby_players: Vec<&str> = vec![lobby.players[&lobby.owner].name.as_ref()];
+            lobby_players.extend(
+               lobby
+                  .players
+                  .iter()
+                  .filter(|(id, _)| **id != lobby.owner)
+                  .map(|(_, p)| p.name.as_str()),
+            );
+            lobby_players
+         };
+
+         let _ = serialize_and_send(
+            &mut self.out,
+            &PalaceOutMessage::SpectateLobbyResponse(Ok(SpectateLobbyResponse {
+               lobby_players,
+               max_players: lobby.max_players,
+               num_spectators: lobby.spectators.len() as u8,
+               turn_timer: lobby.turn_timer.as_secs() as u8,
+            })),
+         );
+
+         lobby.spectators.push(self.out.clone());
+
+         for player in lobby.players.values_mut() {
+            match player.connection {
+               Connection::Connected(ref mut sender) => {
+                  let _ = serialize_and_send(sender, &PalaceOutMessage::SpectatorJoinEvent(()));
+               }
+               Connection::Disconnected(_) => (),
+               Connection::Ai(_) => (),
+            }
+         }
+         for sender in lobby
+            .spectators
+            .iter_mut()
+            .filter(|s| s.connection_id() != self.out.connection_id())
+         {
+            let _ = serialize_and_send(sender, &PalaceOutMessage::SpectatorJoinEvent(()));
+         }
+
+         update_connected_player_info(
+            &mut self.connected_user,
+            &mut lobbies,
+            ConnectedUser::Spectator(message),
+            self.out.connection_id(),
+         );
 
          Ok(())
       } else {
@@ -856,6 +886,19 @@ fn disconnect_old_player(connected_user: &ConnectedUser, lobbies: &mut HashMap<L
                   time: Instant::now(),
                   reason: DisconnectedReason::Left,
                });
+
+               for player in old_lobby.players.values_mut() {
+                  match player.connection {
+                     Connection::Connected(ref mut sender) => {
+                        let _ = serialize_and_send(sender, &PalaceOutMessage::SpectatorLeaveEvent(()));
+                     }
+                     Connection::Disconnected(_) => (),
+                     Connection::Ai(_) => (),
+                  }
+               }
+               for sender in &mut old_lobby.spectators {
+                  let _ = serialize_and_send(sender, &PalaceOutMessage::SpectatorLeaveEvent(()));
+               }
             }
          }
       }
@@ -1166,7 +1209,7 @@ pub fn run_server(address: &'static str) {
          for lobby in lobbies.values_mut().filter(|l| {
             l.creation_time.elapsed() > Duration::from_secs(10)
                && (l.players.len() as u8) < l.max_players
-               && l.password.len() == 0
+               && l.password.is_empty()
          }) {
             let player_id = PlayerId(rand::random());
             let ai: Box<PalaceAi + Send + Sync> = Box::new(ai::random::new());
@@ -1195,10 +1238,10 @@ pub fn run_server(address: &'static str) {
          }
 
          // Start full lobbies that are owned by bots
-         for lobby in lobbies.values_mut().filter(|l| {
-            l.players.len() as u8 == l.max_players
-               && l.players[&l.owner].is_ai()
-         }) {
+         for lobby in lobbies
+            .values_mut()
+            .filter(|l| l.players.len() as u8 == l.max_players && l.players[&l.owner].is_ai())
+         {
             start_game(lobby);
          }
       });
