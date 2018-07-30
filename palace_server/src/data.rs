@@ -116,6 +116,13 @@ pub(crate) struct ReconnectMessage {
    pub lobby_id: LobbyId,
 }
 
+#[derive(Serialize)]
+pub(crate) struct ReconnectResponse {
+   pub max_players: u8,
+   pub num_spectators: u8,
+   pub turn_timer: u8,
+}
+
 #[derive(Deserialize)]
 pub(crate) struct KickPlayerMessage {
    pub player_id: PlayerId,
@@ -215,7 +222,7 @@ pub(crate) enum PalaceOutMessage<'a> {
    StartGameResponse(Result<(), StartGameError>),
    ChooseFaceupResponse(Result<(), ChooseFaceupError>),
    MakePlayResponse(Result<(), MakePlayError>),
-   ReconnectResponse(Result<(), ReconnectError>),
+   ReconnectResponse(Result<ReconnectResponse, ReconnectError>),
    RequestAiResponse(Result<(), RequestAiError>),
    KickPlayerResponse(Result<(), KickPlayerError>),
    SpectateLobbyResponse(Result<SpectateLobbyResponse<'a>, SpectateLobbyError>),

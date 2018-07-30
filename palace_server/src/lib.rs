@@ -626,7 +626,7 @@ impl Server {
       }
    }
 
-   fn do_reconnect(&mut self, message: &ReconnectMessage) -> Result<(), ReconnectError> {
+   fn do_reconnect(&mut self, message: &ReconnectMessage) -> Result<ReconnectResponse, ReconnectError> {
       let mut lobbies = self.lobbies.write().unwrap();
       if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
          // @Performance we construct this but throw it away if the user can't reconnect
@@ -658,7 +658,11 @@ impl Server {
                );
             }
 
-            Ok(())
+            Ok(ReconnectResponse {
+               max_players: lobby.max_players,
+               num_spectators: lobby.spectators.len() as u8,
+               turn_timer: lobby.turn_timer.as_secs() as u8,
+            })
          } else {
             Err(ReconnectError::PlayerNotFound)
          }
@@ -1149,6 +1153,8 @@ pub fn run_server(address: &'static str) {
    }
 
    // Clandestine AI
+   // Ideally, each sub-function should be on a seperate timer
+   // @TODO probably pending an async rewrite with tokio-tungstenite
    {
       let thread_lobbies = lobbies.clone();
       std::thread::spawn(move || loop {
