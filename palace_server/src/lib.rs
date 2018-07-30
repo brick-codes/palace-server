@@ -503,24 +503,6 @@ impl Server {
             return Err(SpectateLobbyError::SpectateLobbyFull);
          }
 
-         let mut players = HashMap::new();
-         for player in lobby.players.values() {
-            players.insert(player.turn_number, player.name.clone());
-         }
-
-         if lobby.game.is_some() {
-            if let Some(ref gs) = lobby.game {
-               let _ = serialize_and_send(
-                  &mut self.out,
-                  &PalaceOutMessage::SpectateGameStartEvent(SpectateGameStartEvent { players: &players }),
-               );
-               let _ = serialize_and_send(
-                  &mut self.out,
-                  &PalaceOutMessage::PublicGameStateEvent(&gs.public_state()),
-               );
-            }
-         }
-
          let lobby_players = {
             let mut lobby_players: Vec<&str> = vec![lobby.players[&lobby.owner].name.as_ref()];
             lobby_players.extend(
@@ -543,7 +525,20 @@ impl Server {
             })),
          );
 
-         lobby.spectators.push(self.out.clone());
+         if let Some(ref gs) = lobby.game {
+            let mut players = HashMap::new();
+            for player in lobby.players.values() {
+               players.insert(player.turn_number, player.name.clone());
+            }
+            let _ = serialize_and_send(
+               &mut self.out,
+               &PalaceOutMessage::SpectateGameStartEvent(SpectateGameStartEvent { players: &players }),
+            );
+            let _ = serialize_and_send(
+               &mut self.out,
+               &PalaceOutMessage::PublicGameStateEvent(&gs.public_state()),
+            );
+         }
 
          for player in lobby.players.values_mut() {
             match player.connection {
@@ -554,13 +549,12 @@ impl Server {
                Connection::Ai(_) => (),
             }
          }
-         for sender in lobby
-            .spectators
-            .iter_mut()
-            .filter(|s| s.connection_id() != self.out.connection_id())
+         for sender in &mut lobby.spectators
          {
             let _ = serialize_and_send(sender, &PalaceOutMessage::SpectatorJoinEvent(()));
          }
+
+         lobby.spectators.push(self.out.clone());
 
          update_connected_player_info(
             &mut self.connected_user,
