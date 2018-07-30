@@ -27,6 +27,9 @@ use std::time::{Duration, Instant};
 use ws::{CloseCode, Handler, Handshake, Message, Sender};
 
 const EMPTY_LOBBY_PRUNE_THRESHOLD_SECS: u64 = 30;
+const PLAYER_NAME_LIMIT: usize = 20;
+const LOBBY_NAME_LIMIT: usize = 20;
+const PASSWORD_LIMIT: usize = 20;
 
 #[derive(PartialEq, Eq, Hash, Serialize, Deserialize, Clone, Copy)]
 struct PlayerId(#[serde(serialize_with = "as_hex_str", deserialize_with = "hex_to_u128")] u128);
@@ -402,6 +405,18 @@ impl Server {
          return Err(NewLobbyError::EmptyPlayerName);
       }
 
+      if message.lobby_name.len() > LOBBY_NAME_LIMIT {
+         return Err(NewLobbyError::LobbyNameTooLong);
+      }
+
+      if message.player_name.len() > PLAYER_NAME_LIMIT {
+         return Err(NewLobbyError::PlayerNameTooLong);
+      }
+
+      if message.password.len() > PASSWORD_LIMIT {
+         return Err(NewLobbyError::PasswordTooLong);
+      }
+
       let mut lobbies = self.lobbies.write().unwrap();
       let (lobby_id, player_id) = create_lobby(
          &mut lobbies,
@@ -430,6 +445,10 @@ impl Server {
    fn do_join_lobby(&mut self, message: JoinLobbyMessage) -> Result<(), JoinLobbyError> {
       if message.player_name.is_empty() {
          return Err(JoinLobbyError::EmptyPlayerName);
+      }
+
+      if message.player_name.len() > PLAYER_NAME_LIMIT {
+         return Err(JoinLobbyError::PlayerNameTooLong);
       }
 
       let mut lobbies = self.lobbies.write().unwrap();

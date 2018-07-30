@@ -28,6 +28,9 @@ pub(crate) enum NewLobbyError {
    LessThanTwoMaxPlayers,
    EmptyLobbyName,
    EmptyPlayerName,
+   LobbyNameTooLong,
+   PlayerNameTooLong,
+   PasswordTooLong,
 }
 
 #[derive(Deserialize)]
@@ -53,6 +56,7 @@ pub(crate) enum JoinLobbyError {
    BadPassword,
    GameInProgress,
    EmptyPlayerName,
+   PlayerNameTooLong,
 }
 
 #[derive(Serialize)]
