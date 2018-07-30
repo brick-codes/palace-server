@@ -568,8 +568,7 @@ impl Server {
                Connection::Ai(_) => (),
             }
          }
-         for sender in &mut lobby.spectators
-         {
+         for sender in &mut lobby.spectators {
             let _ = serialize_and_send(sender, &PalaceOutMessage::SpectatorJoinEvent(()));
          }
 
