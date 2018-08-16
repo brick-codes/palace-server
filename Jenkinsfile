@@ -2,9 +2,9 @@ pipeline {
   agent any
 
   stages {
-    stage('Build + Test') {
+    stage('Build + Test + Coverage') {
       steps {
-         sh 'cargo test --all'
+         sh 'cargo tarpaulin --all'
       }
     }
   }
