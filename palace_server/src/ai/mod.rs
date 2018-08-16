@@ -53,17 +53,17 @@ pub(crate) fn get_bot_name_clandestine() -> String {
       ),
       _ => unreachable!(),
    };
-   let suffix = match rand::thread_rng().gen_range(0, 4) {
-      0 => "".to_string(),
-      1 => {
+   let suffix = match rand::thread_rng().gen_range(0, 5) {
+      0 | 1 => "".to_string(),
+      2 => {
          let mut suffix = rand::thread_rng().gen_range(0, 10).to_string();
          while rand::random() {
             suffix = format!("{}{}", suffix, rand::thread_rng().gen_range(0, 10));
          }
          suffix
       }
-      2 => rand::thread_rng().gen_range(80, 100).to_string(),
-      3 => rand::thread_rng().gen_range(1980, 2001).to_string(),
+      3 => rand::thread_rng().gen_range(80, 100).to_string(),
+      4 => rand::thread_rng().gen_range(1980, 2001).to_string(),
       _ => unreachable!(),
    };
 
