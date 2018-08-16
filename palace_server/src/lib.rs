@@ -73,7 +73,7 @@ impl Lobby {
    pub(crate) fn display(&self, lobby_id: &LobbyId) -> LobbyDisplay {
       LobbyDisplay {
          cur_players: self.players.len() as u8,
-         ai_players: self.players.values().filter(|p| p.is_ai()).count() as u8,
+         ai_players: self.players.values().filter(|p| p.is_requested_ai()).count() as u8,
          max_players: self.max_players,
          started: self.game.is_some(),
          has_password: !self.password.is_empty(),
@@ -113,7 +113,12 @@ fn next_public_id(players_by_public_id: &HashMap<u8, PlayerId>) -> u8 {
 enum Connection {
    Connected(ws::Sender),
    Disconnected(DisconnectedState),
-   Ai(Box<dyn PalaceAi + Send + Sync>),
+   Ai(AiState),
+}
+
+struct AiState {
+   core: Box<dyn PalaceAi + Send + Sync>,
+   is_clandestine: bool,
 }
 
 struct DisconnectedState {
@@ -135,6 +140,13 @@ struct Player {
 }
 
 impl Player {
+   fn is_requested_ai(&self) -> bool {
+      match &self.connection {
+         Connection::Ai(ai) => !ai.is_clandestine,
+         _ => false,
+      }
+   }
+
    fn is_ai(&self) -> bool {
       match self.connection {
          Connection::Ai(_) => true,
@@ -178,7 +190,7 @@ fn ai_play(lobbies: &mut HashMap<LobbyId, Lobby>) {
             match gs.cur_phase {
                game::Phase::Setup => {
                   let faceup_three = match lobby.players.get_mut(player_id).unwrap().connection {
-                     Connection::Ai(ref mut ai) => ai.choose_three_faceup(),
+                     Connection::Ai(ref mut ai) => ai.core.choose_three_faceup(),
                      _ => continue,
                   };
                   match gs.choose_three_faceup(faceup_three.0, faceup_three.1, faceup_three.2) {
@@ -189,16 +201,19 @@ fn ai_play(lobbies: &mut HashMap<LobbyId, Lobby>) {
                         let player = lobby.players.get_mut(player_id).unwrap();
                         match player.connection {
                            Connection::Ai(ref mut ai) => {
-                              error!("Bot (strategy: {}) failed to choose three faceup", ai.strategy_name());
-                              if ai.strategy_name() != "Random" {
+                              error!(
+                                 "Bot (strategy: {}) failed to choose three faceup",
+                                 ai.core.strategy_name()
+                              );
+                              if ai.core.strategy_name() != "Random" {
                                  info!("Falling back to Random");
-                                 *ai = Box::new(ai::random::new());
-                                 ai.on_game_start(GameStartEvent {
+                                 ai.core = Box::new(ai::random::new());
+                                 ai.core.on_game_start(GameStartEvent {
                                     hand: gs.get_hand(player.turn_number),
                                     turn_number: player.turn_number,
                                     players: &HashMap::new(), // Random doesn't need players
                                  });
-                                 ai.on_game_state_update(&gs.public_state());
+                                 ai.core.on_game_state_update(&gs.public_state());
                               }
                            }
                            _ => unreachable!(),
@@ -213,7 +228,7 @@ fn ai_play(lobbies: &mut HashMap<LobbyId, Lobby>) {
                      {
                         vec![].into_boxed_slice()
                      } else {
-                        ai.take_turn()
+                        ai.core.take_turn()
                      },
                      _ => continue,
                   };
@@ -225,16 +240,16 @@ fn ai_play(lobbies: &mut HashMap<LobbyId, Lobby>) {
                         let player = lobby.players.get_mut(player_id).unwrap();
                         match player.connection {
                            Connection::Ai(ref mut ai) => {
-                              error!("Bot (strategy: {}) failed to make play", ai.strategy_name());
-                              if ai.strategy_name() != "Random" {
+                              error!("Bot (strategy: {}) failed to make play", ai.core.strategy_name());
+                              if ai.core.strategy_name() != "Random" {
                                  info!("Falling back to Random");
-                                 *ai = Box::new(ai::random::new());
-                                 ai.on_game_start(GameStartEvent {
+                                 ai.core = Box::new(ai::random::new());
+                                 ai.core.on_game_start(GameStartEvent {
                                     hand: gs.get_hand(player.turn_number),
                                     turn_number: player.turn_number,
                                     players: &HashMap::new(), // Random doesn't need players
                                  });
-                                 ai.on_game_state_update(&gs.public_state());
+                                 ai.core.on_game_state_update(&gs.public_state());
                               }
                            }
                            _ => unreachable!(),
@@ -378,7 +393,10 @@ impl Server {
                add_player(
                   Player {
                      name: ai::get_bot_name(),
-                     connection: Connection::Ai(ai),
+                     connection: Connection::Ai(AiState {
+                        core: ai,
+                        is_clandestine: false,
+                     }),
                      turn_number: next_public_id(&lobby.players_by_turn_num),
                   },
                   player_id,
@@ -838,12 +856,12 @@ fn start_game(lobby: &mut Lobby) {
          }
          Connection::Disconnected(_) => (),
          Connection::Ai(ref mut ai) => {
-            ai.on_game_start(GameStartEvent {
+            ai.core.on_game_start(GameStartEvent {
                hand: lobby.game.as_ref().unwrap().get_hand(player.turn_number),
                turn_number: player.turn_number,
                players: &players,
             });
-            ai.on_game_state_update(&public_gs);
+            ai.core.on_game_state_update(&public_gs);
          }
       }
    }
@@ -935,9 +953,9 @@ fn report_make_play(gs: &GameState, players: &mut HashMap<PlayerId, Player>, id_
          Connection::Disconnected(_) => (),
          Connection::Ai(ref mut ai) => {
             if *id == id_of_last_player {
-               ai.on_hand_update(gs.get_hand(player.turn_number));
+               ai.core.on_hand_update(gs.get_hand(player.turn_number));
             }
-            ai.on_game_state_update(&public_gs);
+            ai.core.on_game_state_update(&public_gs);
          }
       }
    }
@@ -956,9 +974,9 @@ fn report_choose_faceup(gs: &GameState, players: &mut HashMap<PlayerId, Player>,
          Connection::Disconnected(_) => (),
          Connection::Ai(ref mut ai) => {
             if *id == id_of_last_player {
-               ai.on_hand_update(gs.get_hand(player.turn_number));
+               ai.core.on_hand_update(gs.get_hand(player.turn_number));
             }
-            ai.on_game_state_update(&public_gs);
+            ai.core.on_game_state_update(&public_gs);
          }
       }
    }
@@ -1106,17 +1124,17 @@ pub fn run_server(address: &'static str) {
                            Connection::Ai(ref mut ai) => {
                               error!(
                                  "Bot (strategy: {}) failed to take its turn within time limit",
-                                 ai.strategy_name()
+                                 ai.core.strategy_name()
                               );
-                              if ai.strategy_name() != "Random" {
+                              if ai.core.strategy_name() != "Random" {
                                  info!("Falling back to Random");
-                                 *ai = Box::new(ai::random::new());
-                                 ai.on_game_start(GameStartEvent {
+                                 ai.core = Box::new(ai::random::new());
+                                 ai.core.on_game_start(GameStartEvent {
                                     hand: gs.get_hand(player.turn_number),
                                     turn_number: player.turn_number,
                                     players: &HashMap::new(), // Random doesn't need players
                                  });
-                                 ai.on_game_state_update(&gs.public_state());
+                                 ai.core.on_game_state_update(&gs.public_state());
                               }
                            }
                         }
@@ -1228,7 +1246,10 @@ pub fn run_server(address: &'static str) {
             add_player(
                Player {
                   name: ai::get_bot_name_clandestine(),
-                  connection: Connection::Ai(ai),
+                  connection: Connection::Ai(AiState {
+                     core: ai,
+                     is_clandestine: true,
+                  }),
                   turn_number: next_public_id(&lobby.players_by_turn_num),
                },
                player_id,
@@ -1240,7 +1261,10 @@ pub fn run_server(address: &'static str) {
          if lobbies.len() < 10 {
             create_lobby(
                &mut lobbies,
-               Connection::Ai(Box::new(ai::random::new())),
+               Connection::Ai(AiState {
+                  core: Box::new(ai::random::new()),
+                  is_clandestine: true,
+               }),
                "botto grotto".into(),
                ai::get_bot_name_clandestine(),
                "".into(),
