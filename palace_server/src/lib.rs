@@ -223,7 +223,7 @@ fn ai_play(lobbies: &mut HashMap<LobbyId, Lobby>) {
                }
                game::Phase::Play => {
                   let play = match lobby.players.get_mut(player_id).unwrap().connection {
-                     Connection::Ai(ref mut ai) => ai_take_turn(&gs, &mut *ai.core),
+                     Connection::Ai(ref mut ai) => ai::get_play(&gs, &mut *ai.core),
                      _ => continue,
                   };
                   match gs.make_play(play) {
@@ -867,15 +867,6 @@ fn start_game(lobby: &mut Lobby) {
    }
 }
 
-fn ai_take_turn(gs: &GameState, ai_core: &mut (dyn PalaceAi + Send + Sync)) -> Box<[game::Card]> {
-   if gs.hands[gs.active_player as usize].is_empty() && gs.face_up_three[gs.active_player as usize].is_empty()
-   {
-      vec![].into_boxed_slice()
-   } else {
-      ai_core.take_turn()
-   }
-}
-
 fn update_connected_player_info(
    connected_user: &mut Option<ConnectedUser>,
    lobbies: &mut HashMap<LobbyId, Lobby>,
@@ -1166,7 +1157,7 @@ pub fn run_server(address: &'static str) {
                               players: &HashMap::new(), // Random doesn't need players
                            });
                            ai.on_game_state_update(&gs.public_state());
-                           let play = ai_take_turn(&gs, &mut *ai);
+                           let play = ai::get_play(&gs, &mut *ai);
                            gs.make_play(play).unwrap();
                            report_make_play(gs, &mut lobby.players, player_id);
                         }
