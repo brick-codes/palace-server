@@ -4,7 +4,7 @@ pipeline {
   stages {
     stage('Build + Test + Coverage') {
       steps {
-         sh 'cargo tarpaulin -v --count -p palace_server --exclude-files "tests/*"'
+         sh 'cargo tarpaulin -v -l --count -p palace_server --ignore-tests'
       }
     }
   }
