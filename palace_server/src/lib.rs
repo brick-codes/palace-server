@@ -1261,7 +1261,7 @@ pub fn run_server(address: &'static str) {
          }
 
          // Create new lobbies
-         if lobbies.len() < 10 {
+         if lobbies.len() < 5 {
             create_lobby(
                &mut lobbies,
                Connection::Ai(AiState {
