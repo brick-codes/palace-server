@@ -752,7 +752,17 @@ impl Server {
                         ds.reason = DisconnectedReason::Kicked;
                         Ok(())
                      }
-                     Connection::Ai(_) => Err(KickPlayerError::CantKickAiDuringGame),
+                     Connection::Ai(ref ai) => {
+                        if ai.is_clandestine {
+                           player.connection = Connection::Disconnected(DisconnectedState {
+                              time: Instant::now(),
+                              reason: DisconnectedReason::Kicked,
+                           });
+                           Ok(())
+                        } else {
+                           Err(KickPlayerError::CantKickAiDuringGame)
+                        }
+                     },
                   }
                }
                None => {
@@ -1114,7 +1124,14 @@ pub fn run_server(address: &'static str) {
                                  reason: DisconnectedReason::TimedOut,
                               });
                            }
-                           Connection::Disconnected(_) => (),
+                           Connection::Disconnected(ref mut dc) => {
+                              // Elevate their disconnected status to timed out
+                              // if they had left, so that their turns start
+                              // being taken instantaneously
+                              if dc.reason == DisconnectedReason::Left {
+                                 dc.reason = DisconnectedReason::TimedOut;
+                              }
+                           },
                            Connection::Ai(ref mut ai) => {
                               error!(
                                  "Bot (strategy: {}) failed to take its turn within time limit",
