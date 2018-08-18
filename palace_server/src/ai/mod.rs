@@ -1,5 +1,5 @@
 use data::GameStartEvent;
-use game::{Card, PublicGameState, GameState};
+use game::{Card, GameState, PublicGameState};
 use rand::{self, Rng};
 
 pub mod random;
@@ -74,8 +74,7 @@ pub(crate) fn get_bot_name_clandestine() -> String {
 }
 
 pub(crate) fn get_play(gs: &GameState, ai_core: &mut (dyn PalaceAi + Send + Sync)) -> Box<[Card]> {
-   if gs.hands[gs.active_player as usize].is_empty() && gs.face_up_three[gs.active_player as usize].is_empty()
-   {
+   if gs.hands[gs.active_player as usize].is_empty() && gs.face_up_three[gs.active_player as usize].is_empty() {
       vec![].into_boxed_slice()
    } else {
       ai_core.take_turn()

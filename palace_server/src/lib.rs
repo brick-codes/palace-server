@@ -762,7 +762,7 @@ impl Server {
                         } else {
                            Err(KickPlayerError::CantKickAiDuringGame)
                         }
-                     },
+                     }
                   }
                }
                None => {
@@ -1131,7 +1131,7 @@ pub fn run_server(address: &'static str) {
                               if dc.reason == DisconnectedReason::Left {
                                  dc.reason = DisconnectedReason::TimedOut;
                               }
-                           },
+                           }
                            Connection::Ai(ref mut ai) => {
                               error!(
                                  "Bot (strategy: {}) failed to take its turn within time limit",
@@ -1248,7 +1248,8 @@ pub fn run_server(address: &'static str) {
 
          // Fill empty slots
          for lobby in lobbies.values_mut().filter(|l| {
-            l.creation_time.elapsed() > Duration::from_secs(10)
+            l.game.is_none()
+               && l.creation_time.elapsed() > Duration::from_secs(10)
                && (l.players.len() as u8) < l.max_players
                && l.password.is_empty()
          }) {
@@ -1287,7 +1288,7 @@ pub fn run_server(address: &'static str) {
          // Start full lobbies that are owned by bots
          for lobby in lobbies
             .values_mut()
-            .filter(|l| l.players.len() as u8 == l.max_players && l.players[&l.owner].is_ai())
+            .filter(|l| l.game.is_none() && l.players.len() as u8 == l.max_players && l.players[&l.owner].is_ai())
          {
             start_game(lobby);
          }
