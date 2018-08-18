@@ -240,10 +240,23 @@ fn ai_play(lobbies: &mut HashMap<LobbyId, Lobby>) {
                      Ok(game_finished) => {
                         report_make_play(&gs, &mut lobby.players, &mut lobby.spectators, *player_id);
                         if game_finished {
-                           for sender in lobby.players.values_mut().flat_map(|x| x.connection.get_sender()).chain(&mut lobby.spectators) {
+                           let mut players_to_remove = Vec::new();
+                           for (id, player) in &mut lobby.players {
+                              match player.connection {
+                                 Connection::Disconnected(_) => {
+                                    players_to_remove.push(*id);
+                                 }
+                                 Connection::Connected(ref mut sender) => {
+                                    let _ = serialize_and_send(sender, &PalaceOutMessage::GameCompleteEvent(&gs.out_players));
+                                 }
+                                 Connection::Ai(_) => (),
+                              }
+                           }
+                           for sender in &mut lobby.spectators {
                               let _ = serialize_and_send(sender, &PalaceOutMessage::GameCompleteEvent(&gs.out_players));
                            }
                            lobby.game = None;
+                           players_to_remove.into_iter().for_each(|id| remove_player(id, lobby, None));
                         }
                      }
                      Err(_) => {
@@ -682,10 +695,23 @@ impl Server {
                Ok(game_finished) => {
                   report_make_play(&gs, &mut lobby.players, &mut lobby.spectators, message.player_id);
                   if game_finished {
-                     for sender in lobby.players.values_mut().flat_map(|x| x.connection.get_sender()).chain(&mut lobby.spectators) {
+                     let mut players_to_remove = Vec::new();
+                     for (id, player) in &mut lobby.players {
+                        match player.connection {
+                           Connection::Disconnected(_) => {
+                              players_to_remove.push(*id);
+                           }
+                           Connection::Connected(ref mut sender) => {
+                              let _ = serialize_and_send(sender, &PalaceOutMessage::GameCompleteEvent(&gs.out_players));
+                           }
+                           Connection::Ai(_) => (),
+                        }
+                     }
+                     for sender in &mut lobby.spectators {
                         let _ = serialize_and_send(sender, &PalaceOutMessage::GameCompleteEvent(&gs.out_players));
                      }
                      lobby.game = None;
+                     players_to_remove.into_iter().for_each(|id| remove_player(id, lobby, None));
                   }
                   Ok(())
                }
