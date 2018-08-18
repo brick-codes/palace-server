@@ -116,6 +116,16 @@ enum Connection {
    Ai(AiState),
 }
 
+impl Connection {
+   fn get_sender(&mut self) -> Option<&mut ws::Sender> {
+      if let Connection::Connected(ref mut sender) = self {
+         Some(sender)
+      } else {
+         None
+      }
+   }
+}
+
 struct AiState {
    core: Box<dyn PalaceAi + Send + Sync>,
    is_clandestine: bool,
@@ -227,8 +237,14 @@ fn ai_play(lobbies: &mut HashMap<LobbyId, Lobby>) {
                      _ => continue,
                   };
                   match gs.make_play(play) {
-                     Ok(()) => {
+                     Ok(game_finished) => {
                         report_make_play(&gs, &mut lobby.players, &mut lobby.spectators, *player_id);
+                        if game_finished {
+                           for sender in lobby.players.values_mut().flat_map(|x| x.connection.get_sender()).chain(&mut lobby.spectators) {
+                              let _ = serialize_and_send(sender, &PalaceOutMessage::GameCompleteEvent(&gs.out_players));
+                           }
+                           lobby.game = None;
+                        }
                      }
                      Err(_) => {
                         let player = lobby.players.get_mut(player_id).unwrap();
@@ -250,9 +266,6 @@ fn ai_play(lobbies: &mut HashMap<LobbyId, Lobby>) {
                         }
                      }
                   }
-               }
-               game::Phase::Complete => {
-                  continue;
                }
             }
          }
@@ -666,8 +679,14 @@ impl Server {
             };
 
             match result {
-               Ok(()) => {
+               Ok(game_finished) => {
                   report_make_play(&gs, &mut lobby.players, &mut lobby.spectators, message.player_id);
+                  if game_finished {
+                     for sender in lobby.players.values_mut().flat_map(|x| x.connection.get_sender()).chain(&mut lobby.spectators) {
+                        let _ = serialize_and_send(sender, &PalaceOutMessage::GameCompleteEvent(&gs.out_players));
+                     }
+                     lobby.game = None;
+                  }
                   Ok(())
                }
                Err(e) => Err(MakePlayError::GameError(e)),
@@ -1025,6 +1044,7 @@ fn add_player(new_player: Player, player_id: PlayerId, lobby: &mut Lobby) {
    }
 }
 
+/// This REMOVES players (from the turn order.) Not meant for game in progress
 fn remove_player(old_player_id: PlayerId, lobby: &mut Lobby, opt_event: Option<LobbyCloseEvent>) {
    let old_player_opt = lobby.players.remove(&old_player_id);
 
@@ -1102,7 +1122,7 @@ pub fn run_server(address: &'static str) {
             let mut lobbies = thread_lobbies.write().unwrap();
             for lobby in lobbies.values_mut() {
                if let Some(ref mut gs) = lobby.game {
-                  if gs.cur_phase == game::Phase::Complete || lobby.turn_timer.as_secs() == 0 {
+                  if lobby.turn_timer.as_secs() == 0 {
                      continue;
                   }
 
@@ -1181,7 +1201,6 @@ pub fn run_server(address: &'static str) {
                            gs.make_play(play).unwrap();
                            report_make_play(gs, &mut lobby.players, &mut lobby.spectators, player_id);
                         }
-                        _ => unreachable!(),
                      }
                   }
                }
@@ -1211,13 +1230,7 @@ pub fn run_server(address: &'static str) {
                         }
                      }
                      Connection::Ai(_) => {
-                        if let Some(ref game) = lobby.game {
-                           if game.cur_phase != game::Phase::Complete {
-                              return true;
-                           }
-                        } else {
-                           return true;
-                        }
+                        return true;
                      }
                   }
                }

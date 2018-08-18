@@ -56,7 +56,6 @@ pub struct Card {
 pub enum Phase {
    Setup,
    Play,
-   Complete,
 }
 
 #[derive(Clone, Debug)]
@@ -70,7 +69,7 @@ pub struct GameState {
    pile_cards: Vec<Card>,
    pub cur_phase: Phase,
    last_cards_played: Vec<Card>,
-   out_players: Vec<u8>,
+   pub out_players: Vec<u8>,
    pub last_turn_start: Instant,
 }
 
@@ -184,7 +183,8 @@ impl GameState {
       Ok(())
    }
 
-   pub fn make_play(&mut self, cards: Box<[Card]>) -> Result<(), &'static str> {
+   /// Return bool = whether or not the game is complete
+   pub fn make_play(&mut self, cards: Box<[Card]>) -> Result<bool, &'static str> {
       #[derive(PartialEq)]
       enum CardZone {
          Hand,
@@ -275,8 +275,8 @@ impl GameState {
       {
          self.out_players.push(self.active_player);
          if self.out_players.len() as u8 == self.num_players - 1 {
-            self.cur_phase = Phase::Complete;
-            return Ok(());
+            self.out_players.push(self.next_player());
+            return Ok(true);
          }
          true
       } else {
@@ -293,7 +293,7 @@ impl GameState {
          self.rotate_play();
       }
 
-      Ok(())
+      Ok(false)
    }
 
    fn top_n_cards_same(&self) -> bool {
@@ -319,17 +319,22 @@ impl GameState {
       &self.hands[player_num as usize]
    }
 
+   fn next_player(&self) -> u8 {
+      let mut next_player = self.active_player + 1;
+      while self.out_players.contains(&next_player) {
+         next_player += 1;
+      }
+      if next_player == self.num_players {
+         next_player = 0;
+      }
+      while self.out_players.contains(&next_player) {
+         next_player += 1;
+      }
+      next_player
+   }
+
    fn rotate_play(&mut self) {
-      self.active_player += 1;
-      while self.out_players.contains(&self.active_player) {
-         self.active_player += 1;
-      }
-      if self.active_player == self.num_players {
-         self.active_player = 0;
-      }
-      while self.out_players.contains(&self.active_player) {
-         self.active_player += 1;
-      }
+      self.active_player = self.next_player();
       self.last_turn_start = Instant::now();
    }
 
@@ -375,7 +380,7 @@ mod test {
          game
       }
 
-      fn play_card(&mut self, card_val: CardValue) -> Result<(), &'static str> {
+      fn play_card(&mut self, card_val: CardValue) -> Result<bool, &'static str> {
          let card = Card {
             value: card_val,
             suit: *rand::thread_rng().choose(&SUITS).unwrap(),

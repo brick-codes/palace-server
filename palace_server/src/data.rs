@@ -240,4 +240,5 @@ pub(crate) enum PalaceOutMessage<'a> {
    LobbyCloseEvent(LobbyCloseEvent),
    SpectatorJoinEvent(()),
    SpectatorLeaveEvent(()),
+   GameCompleteEvent(&'a [u8]),
 }
