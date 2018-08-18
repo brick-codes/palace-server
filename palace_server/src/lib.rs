@@ -551,7 +551,7 @@ impl Server {
             &PalaceOutMessage::SpectateLobbyResponse(Ok(SpectateLobbyResponse {
                lobby_players,
                max_players: lobby.max_players,
-               num_spectators: lobby.spectators.len() as u8,
+               num_spectators: lobby.spectators.len() as u8 + 1,
                turn_timer: lobby.turn_timer.as_secs() as u8,
             })),
          );
