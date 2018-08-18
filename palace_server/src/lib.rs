@@ -228,7 +228,7 @@ fn ai_play(lobbies: &mut HashMap<LobbyId, Lobby>) {
                   };
                   match gs.make_play(play) {
                      Ok(()) => {
-                        report_make_play(&gs, &mut lobby.players, *player_id);
+                        report_make_play(&gs, &mut lobby.players, &mut lobby.spectators, *player_id);
                      }
                      Err(_) => {
                         let player = lobby.players.get_mut(player_id).unwrap();
@@ -667,7 +667,7 @@ impl Server {
 
             match result {
                Ok(()) => {
-                  report_make_play(&gs, &mut lobby.players, message.player_id);
+                  report_make_play(&gs, &mut lobby.players, &mut lobby.spectators, message.player_id);
                   Ok(())
                }
                Err(e) => Err(MakePlayError::GameError(e)),
@@ -944,7 +944,7 @@ fn disconnect_old_player(connected_user: &ConnectedUser, lobbies: &mut HashMap<L
    }
 }
 
-fn report_make_play(gs: &GameState, players: &mut HashMap<PlayerId, Player>, id_of_last_player: PlayerId) {
+fn report_make_play(gs: &GameState, players: &mut HashMap<PlayerId, Player>, spectators: &mut [Sender], id_of_last_player: PlayerId) {
    let public_gs = gs.public_state();
    for (id, player) in players {
       match player.connection {
@@ -962,6 +962,9 @@ fn report_make_play(gs: &GameState, players: &mut HashMap<PlayerId, Player>, id_
             ai.core.on_game_state_update(&public_gs);
          }
       }
+   }
+   for sender in spectators {
+      let _ = serialize_and_send(sender, &PalaceOutMessage::PublicGameStateEvent(&public_gs));
    }
 }
 
@@ -1176,7 +1179,7 @@ pub fn run_server(address: &'static str) {
                            ai.on_game_state_update(&gs.public_state());
                            let play = ai::get_play(&gs, &mut *ai);
                            gs.make_play(play).unwrap();
-                           report_make_play(gs, &mut lobby.players, player_id);
+                           report_make_play(gs, &mut lobby.players, &mut lobby.spectators, player_id);
                         }
                         _ => unreachable!(),
                      }
