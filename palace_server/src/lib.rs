@@ -926,6 +926,7 @@ fn disconnect_old_player(connected_user: &ConnectedUser, lobbies: &mut HashMap<L
       ConnectedUser::Spectator(old_lobby_id) => {
          if let Some(old_lobby) = lobbies.get_mut(&old_lobby_id) {
             old_lobby.spectators.retain(|x| x.connection_id() != our_sender_id);
+
             for player in old_lobby.players.values_mut() {
                match player.connection {
                   Connection::Connected(ref mut sender) => {
