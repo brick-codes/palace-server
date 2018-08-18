@@ -920,25 +920,24 @@ fn disconnect_old_player(connected_user: &ConnectedUser, lobbies: &mut HashMap<L
                   time: Instant::now(),
                   reason: DisconnectedReason::Left,
                });
-
-               for player in old_lobby.players.values_mut() {
-                  match player.connection {
-                     Connection::Connected(ref mut sender) => {
-                        let _ = serialize_and_send(sender, &PalaceOutMessage::SpectatorLeaveEvent(()));
-                     }
-                     Connection::Disconnected(_) => (),
-                     Connection::Ai(_) => (),
-                  }
-               }
-               for sender in &mut old_lobby.spectators {
-                  let _ = serialize_and_send(sender, &PalaceOutMessage::SpectatorLeaveEvent(()));
-               }
             }
          }
       }
       ConnectedUser::Spectator(old_lobby_id) => {
          if let Some(old_lobby) = lobbies.get_mut(&old_lobby_id) {
             old_lobby.spectators.retain(|x| x.connection_id() != our_sender_id);
+            for player in old_lobby.players.values_mut() {
+               match player.connection {
+                  Connection::Connected(ref mut sender) => {
+                     let _ = serialize_and_send(sender, &PalaceOutMessage::SpectatorLeaveEvent(()));
+                  }
+                  Connection::Disconnected(_) => (),
+                  Connection::Ai(_) => (),
+               }
+            }
+            for sender in &mut old_lobby.spectators {
+               let _ = serialize_and_send(sender, &PalaceOutMessage::SpectatorLeaveEvent(()));
+            }
          }
       }
    }
