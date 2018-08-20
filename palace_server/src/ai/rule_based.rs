@@ -1,0 +1,66 @@
+// This AI plays random cards
+use ai::PalaceAi;
+use data::GameStartEvent;
+use game::{Card, PublicGameState};
+use rand::{self, Rng};
+
+pub struct RuleBasedAi {
+    hand: Vec<Card>,
+    faceup_cards: Vec<Card>,
+    turn_number: u8,
+}
+
+pub fn new() -> RuleBasedAi {
+    RuleBasedAi {
+        hand: vec![],
+        faceup_cards: vec![],
+        turn_number: 0,
+    }
+}
+
+impl PalaceAi for RuleBasedAi {
+    fn strategy_name(&self) -> &'static str {
+        "Rule Based"
+    }
+
+    fn choose_three_faceup(&mut self) -> (Card, Card, Card) {
+        (self.faceup_cards[0], self.faceup_cards[1], self.faceup_cards[2])
+    }
+
+    fn take_turn(&mut self) -> Box<[Card]> {
+
+        if !self.hand.is_empty() {
+            self.hand.sort_unstable();
+            if self.faceup_cards.is_empty() {
+                return vec![self.hand[self.hand.len()-1]].into_boxed_slice();
+            }
+
+            for elem in self.hand.iter() {
+                if elem.value >= self.faceup_cards[self.faceup_cards.len()-1].value {
+                    return vec![*elem].into_boxed_slice();
+                }
+            }
+            vec![self.hand[self.hand.len()-1]].into_boxed_slice()
+        } else {
+            vec![*rand::thread_rng().choose(&self.faceup_cards).unwrap()].into_boxed_slice()
+        }
+
+    }
+
+    fn on_game_state_update(&mut self, new_state: &PublicGameState) {
+        self.faceup_cards.clear();
+        self
+            .faceup_cards
+            .extend_from_slice(new_state.face_up_three[self.turn_number as usize]);
+    }
+
+    fn on_game_start(&mut self, game_start_event: GameStartEvent) {
+        self.hand.extend_from_slice(game_start_event.hand);
+        self.turn_number = game_start_event.turn_number;
+    }
+
+    fn on_hand_update(&mut self, new_hand: &[Card]) {
+        self.hand.clear();
+        self.hand.extend_from_slice(new_hand);
+    }
+}

@@ -1224,7 +1224,7 @@ pub fn run_server(address: &'static str) {
                && l.password.is_empty()
          }) {
             let player_id = PlayerId(rand::random());
-            let ai: Box<PalaceAi + Send + Sync> = Box::new(ai::random::new());
+            let ai: Box<PalaceAi + Send + Sync> = Box::new(ai::rule_based::new());
             add_player(
                Player {
                   name: ai::get_bot_name_clandestine(),

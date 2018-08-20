@@ -3,6 +3,7 @@ use game::{Card, PublicGameState};
 use rand::{self, Rng};
 
 pub mod random;
+pub mod rule_based;
 
 lazy_static! {
    static ref NAMES: Vec<&'static str> = { include_str!("names.txt").lines().collect() };

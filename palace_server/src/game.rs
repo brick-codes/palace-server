@@ -1,10 +1,11 @@
 use rand::{self, Rng};
 use std::time::Instant;
+use std::cmp::Ordering;
 
 const HAND_SIZE: usize = 6;
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, PartialOrd, Eq, Ord)]
-enum CardSuit {
+pub enum CardSuit {
    Clubs,
    Diamonds,
    Hearts,
@@ -13,8 +14,8 @@ enum CardSuit {
 
 const SUITS: [CardSuit; 4] = [CardSuit::Clubs, CardSuit::Diamonds, CardSuit::Hearts, CardSuit::Spades];
 
-#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, PartialOrd)]
-enum CardValue {
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, PartialOrd, Ord, Eq)]
+pub enum CardValue {
    Two,
    Three,
    Four,
@@ -46,11 +47,12 @@ const VALUES: [CardValue; 13] = [
    CardValue::Ace,
 ];
 
-#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Card {
-   value: CardValue,
-   suit: CardSuit,
+   pub value: CardValue,
+   pub suit: CardSuit,
 }
+
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub enum Phase {
