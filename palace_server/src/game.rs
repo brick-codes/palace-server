@@ -83,8 +83,7 @@ impl GameState {
          .map(|(value, suit)| Card {
             suit: *suit,
             value: *value,
-         })
-         .collect();
+         }).collect();
       rand::thread_rng().shuffle(&mut deck);
       let mut deck = deck.into_iter();
       let mut face_down_three = Vec::with_capacity(num_players as usize);

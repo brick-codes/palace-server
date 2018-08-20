@@ -237,7 +237,10 @@ fn ai_play(lobbies: &mut HashMap<LobbyId, Lobby>) {
                                     players_to_remove.push(*id);
                                  }
                                  Connection::Connected(ref mut sender) => {
-                                    let _ = serialize_and_send(sender, &PalaceOutMessage::GameCompleteEvent(&gs.out_players));
+                                    let _ = serialize_and_send(
+                                       sender,
+                                       &PalaceOutMessage::GameCompleteEvent(&gs.out_players),
+                                    );
                                  }
                                  Connection::Ai(_) => (),
                               }
@@ -246,7 +249,9 @@ fn ai_play(lobbies: &mut HashMap<LobbyId, Lobby>) {
                               let _ = serialize_and_send(sender, &PalaceOutMessage::GameCompleteEvent(&gs.out_players));
                            }
                            lobby.game = None;
-                           players_to_remove.into_iter().for_each(|id| remove_player(id, lobby, None));
+                           players_to_remove
+                              .into_iter()
+                              .for_each(|id| remove_player(id, lobby, None));
                         }
                      }
                      Err(_) => {
@@ -701,7 +706,9 @@ impl Server {
                         let _ = serialize_and_send(sender, &PalaceOutMessage::GameCompleteEvent(&gs.out_players));
                      }
                      lobby.game = None;
-                     players_to_remove.into_iter().for_each(|id| remove_player(id, lobby, None));
+                     players_to_remove
+                        .into_iter()
+                        .for_each(|id| remove_player(id, lobby, None));
                   }
                   Ok(())
                }
@@ -979,7 +986,12 @@ fn disconnect_old_player(connected_user: &ConnectedUser, lobbies: &mut HashMap<L
    }
 }
 
-fn report_make_play(gs: &GameState, players: &mut HashMap<PlayerId, Player>, spectators: &mut [Sender], id_of_last_player: PlayerId) {
+fn report_make_play(
+   gs: &GameState,
+   players: &mut HashMap<PlayerId, Player>,
+   spectators: &mut [Sender],
+   id_of_last_player: PlayerId,
+) {
    let public_gs = gs.public_state();
    for (id, player) in players {
       match player.connection {
@@ -1235,6 +1247,9 @@ pub fn run_server(address: &'static str) {
          {
             let mut lobbies = thread_lobbies.write().unwrap();
             lobbies.retain(|_, lobby| {
+               if lobby.spectators.len() > 0 {
+                  return true;
+               }
                for player in lobby.players.values() {
                   match &player.connection {
                      Connection::Connected(_) => {
