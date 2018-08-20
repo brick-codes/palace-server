@@ -66,6 +66,7 @@ struct Lobby {
    name: String,
    creation_time: Instant,
    turn_timer: Duration,
+   games_completed: u64,
 }
 
 impl Lobby {
@@ -82,6 +83,7 @@ impl Lobby {
          lobby_id: *lobby_id,
          cur_spectators: self.spectators.len() as u8,
          turn_timer: self.turn_timer.as_secs() as u8,
+         games_completed: self.games_completed,
       }
    }
 }
@@ -99,6 +101,7 @@ pub(crate) struct LobbyDisplay<'a> {
    pub lobby_id: LobbyId,
    pub cur_spectators: u8,
    pub turn_timer: u8,
+   pub games_completed: u64,
 }
 
 fn next_public_id(players_by_public_id: &HashMap<u8, PlayerId>) -> u8 {
@@ -248,6 +251,7 @@ fn ai_play(lobbies: &mut HashMap<LobbyId, Lobby>) {
                               let _ = serialize_and_send(sender, &PalaceOutMessage::GameCompleteEvent(&gs.out_players));
                            }
                            lobby.game = None;
+                           lobby.games_completed += 1;
                            players_to_remove
                               .into_iter()
                               .for_each(|id| remove_player(id, lobby, None));
@@ -705,6 +709,7 @@ impl Server {
                         let _ = serialize_and_send(sender, &PalaceOutMessage::GameCompleteEvent(&gs.out_players));
                      }
                      lobby.game = None;
+                     lobby.games_completed += 1;
                      players_to_remove
                         .into_iter()
                         .for_each(|id| remove_player(id, lobby, None));
@@ -855,6 +860,7 @@ fn create_lobby(
          creation_time: Instant::now(),
          spectators: Vec::new(),
          turn_timer: Duration::from_secs(u64::from(turn_timer)),
+         games_completed: 0,
       },
    );
 
