@@ -1247,7 +1247,7 @@ pub fn run_server(address: &'static str) {
          {
             let mut lobbies = thread_lobbies.write().unwrap();
             lobbies.retain(|_, lobby| {
-               if !lobby.spectators.is_empty() {
+               if !lobby.spectators.is_empty() && lobby.game.is_some() {
                   return true;
                }
                for player in lobby.players.values() {
