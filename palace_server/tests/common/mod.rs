@@ -2,6 +2,7 @@ pub mod data;
 
 use super::*;
 
+use env_logger;
 use palace_server;
 use parking_lot::Mutex;
 use std::sync::mpsc;
@@ -110,6 +111,7 @@ static SERVER_UP: Mutex<bool> = Mutex::new(false);
 pub fn ensure_test_server_up() {
    let mut server_up = SERVER_UP.lock();
    if !*server_up {
+      env_logger::init();
       std::thread::spawn(move || {
          palace_server::run_server("127.0.0.1:3013");
       });

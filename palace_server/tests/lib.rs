@@ -1,3 +1,4 @@
+extern crate env_logger;
 extern crate palace_server;
 extern crate parking_lot;
 #[macro_use]

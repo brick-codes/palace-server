@@ -1,5 +1,5 @@
 use data::GameStartEvent;
-use game::{Card, PublicGameState};
+use game::{Card, GameState, PublicGameState};
 use rand::{self, Rng};
 
 pub mod random;
@@ -54,17 +54,17 @@ pub(crate) fn get_bot_name_clandestine() -> String {
       ),
       _ => unreachable!(),
    };
-   let suffix = match rand::thread_rng().gen_range(0, 4) {
-      0 => "".to_string(),
-      1 => {
+   let suffix = match rand::thread_rng().gen_range(0, 5) {
+      0 | 1 => "".to_string(),
+      2 => {
          let mut suffix = rand::thread_rng().gen_range(0, 10).to_string();
          while rand::random() {
             suffix = format!("{}{}", suffix, rand::thread_rng().gen_range(0, 10));
          }
          suffix
       }
-      2 => rand::thread_rng().gen_range(80, 100).to_string(),
-      3 => rand::thread_rng().gen_range(1980, 2001).to_string(),
+      3 => rand::thread_rng().gen_range(80, 100).to_string(),
+      4 => rand::thread_rng().gen_range(1980, 2001).to_string(),
       _ => unreachable!(),
    };
 
@@ -72,4 +72,12 @@ pub(crate) fn get_bot_name_clandestine() -> String {
    name.truncate(::PLAYER_NAME_LIMIT);
 
    name
+}
+
+pub(crate) fn get_play(gs: &GameState, ai_core: &mut (dyn PalaceAi + Send + Sync)) -> Box<[Card]> {
+   if gs.hands[gs.active_player as usize].is_empty() && gs.face_up_three[gs.active_player as usize].is_empty() {
+      vec![].into_boxed_slice()
+   } else {
+      ai_core.take_turn()
+   }
 }

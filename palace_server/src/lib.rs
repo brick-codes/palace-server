@@ -4,7 +4,6 @@
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
-extern crate pretty_env_logger;
 extern crate rand;
 #[macro_use]
 extern crate serde_derive;
@@ -67,13 +66,14 @@ struct Lobby {
    name: String,
    creation_time: Instant,
    turn_timer: Duration,
+   games_completed: u64,
 }
 
 impl Lobby {
    pub(crate) fn display(&self, lobby_id: &LobbyId) -> LobbyDisplay {
       LobbyDisplay {
          cur_players: self.players.len() as u8,
-         ai_players: self.players.values().filter(|p| p.is_ai()).count() as u8,
+         ai_players: self.players.values().filter(|p| p.is_requested_ai()).count() as u8,
          max_players: self.max_players,
          started: self.game.is_some(),
          has_password: !self.password.is_empty(),
@@ -83,6 +83,7 @@ impl Lobby {
          lobby_id: *lobby_id,
          cur_spectators: self.spectators.len() as u8,
          turn_timer: self.turn_timer.as_secs() as u8,
+         games_completed: self.games_completed,
       }
    }
 }
@@ -100,6 +101,7 @@ pub(crate) struct LobbyDisplay<'a> {
    pub lobby_id: LobbyId,
    pub cur_spectators: u8,
    pub turn_timer: u8,
+   pub games_completed: u64,
 }
 
 fn next_public_id(players_by_public_id: &HashMap<u8, PlayerId>) -> u8 {
@@ -113,7 +115,12 @@ fn next_public_id(players_by_public_id: &HashMap<u8, PlayerId>) -> u8 {
 enum Connection {
    Connected(ws::Sender),
    Disconnected(DisconnectedState),
-   Ai(Box<dyn PalaceAi + Send + Sync>),
+   Ai(AiState),
+}
+
+struct AiState {
+   core: Box<dyn PalaceAi + Send + Sync>,
+   is_clandestine: bool,
 }
 
 struct DisconnectedState {
@@ -135,6 +142,13 @@ struct Player {
 }
 
 impl Player {
+   fn is_requested_ai(&self) -> bool {
+      match &self.connection {
+         Connection::Ai(ai) => !ai.is_clandestine,
+         _ => false,
+      }
+   }
+
    fn is_ai(&self) -> bool {
       match self.connection {
          Connection::Ai(_) => true,
@@ -178,7 +192,7 @@ fn ai_play(lobbies: &mut HashMap<LobbyId, Lobby>) {
             match gs.cur_phase {
                game::Phase::Setup => {
                   let faceup_three = match lobby.players.get_mut(player_id).unwrap().connection {
-                     Connection::Ai(ref mut ai) => ai.choose_three_faceup(),
+                     Connection::Ai(ref mut ai) => ai.core.choose_three_faceup(),
                      _ => continue,
                   };
                   match gs.choose_three_faceup(faceup_three.0, faceup_three.1, faceup_three.2) {
@@ -189,16 +203,19 @@ fn ai_play(lobbies: &mut HashMap<LobbyId, Lobby>) {
                         let player = lobby.players.get_mut(player_id).unwrap();
                         match player.connection {
                            Connection::Ai(ref mut ai) => {
-                              error!("Bot (strategy: {}) failed to choose three faceup", ai.strategy_name());
-                              if ai.strategy_name() != "Random" {
+                              error!(
+                                 "Bot (strategy: {}) failed to choose three faceup",
+                                 ai.core.strategy_name()
+                              );
+                              if ai.core.strategy_name() != "Random" {
                                  info!("Falling back to Random");
-                                 *ai = Box::new(ai::random::new());
-                                 ai.on_game_start(GameStartEvent {
+                                 ai.core = Box::new(ai::random::new());
+                                 ai.core.on_game_start(GameStartEvent {
                                     hand: gs.get_hand(player.turn_number),
                                     turn_number: player.turn_number,
                                     players: &HashMap::new(), // Random doesn't need players
                                  });
-                                 ai.on_game_state_update(&gs.public_state());
+                                 ai.core.on_game_state_update(&gs.public_state());
                               }
                            }
                            _ => unreachable!(),
@@ -208,42 +225,58 @@ fn ai_play(lobbies: &mut HashMap<LobbyId, Lobby>) {
                }
                game::Phase::Play => {
                   let play = match lobby.players.get_mut(player_id).unwrap().connection {
-                     Connection::Ai(ref mut ai) => if gs.hands[gs.active_player as usize].is_empty()
-                        && gs.face_up_three[gs.active_player as usize].is_empty()
-                     {
-                        vec![].into_boxed_slice()
-                     } else {
-                        ai.take_turn()
-                     },
+                     Connection::Ai(ref mut ai) => ai::get_play(&gs, &mut *ai.core),
                      _ => continue,
                   };
                   match gs.make_play(play) {
-                     Ok(()) => {
-                        report_make_play(&gs, &mut lobby.players, *player_id);
+                     Ok(game_finished) => {
+                        report_make_play(&gs, &mut lobby.players, &mut lobby.spectators, *player_id);
+                        if game_finished {
+                           let mut players_to_remove = Vec::new();
+                           for (id, player) in &mut lobby.players {
+                              match player.connection {
+                                 Connection::Disconnected(_) => {
+                                    players_to_remove.push(*id);
+                                 }
+                                 Connection::Connected(ref mut sender) => {
+                                    let _ = serialize_and_send(
+                                       sender,
+                                       &PalaceOutMessage::GameCompleteEvent(&gs.out_players),
+                                    );
+                                 }
+                                 Connection::Ai(_) => (),
+                              }
+                           }
+                           for sender in &mut lobby.spectators {
+                              let _ = serialize_and_send(sender, &PalaceOutMessage::GameCompleteEvent(&gs.out_players));
+                           }
+                           lobby.game = None;
+                           lobby.games_completed += 1;
+                           players_to_remove
+                              .into_iter()
+                              .for_each(|id| remove_player(id, lobby, None));
+                        }
                      }
                      Err(_) => {
                         let player = lobby.players.get_mut(player_id).unwrap();
                         match player.connection {
                            Connection::Ai(ref mut ai) => {
-                              error!("Bot (strategy: {}) failed to make play", ai.strategy_name());
-                              if ai.strategy_name() != "Random" {
+                              error!("Bot (strategy: {}) failed to make play", ai.core.strategy_name());
+                              if ai.core.strategy_name() != "Random" {
                                  info!("Falling back to Random");
-                                 *ai = Box::new(ai::random::new());
-                                 ai.on_game_start(GameStartEvent {
+                                 ai.core = Box::new(ai::random::new());
+                                 ai.core.on_game_start(GameStartEvent {
                                     hand: gs.get_hand(player.turn_number),
                                     turn_number: player.turn_number,
                                     players: &HashMap::new(), // Random doesn't need players
                                  });
-                                 ai.on_game_state_update(&gs.public_state());
+                                 ai.core.on_game_state_update(&gs.public_state());
                               }
                            }
                            _ => unreachable!(),
                         }
                      }
                   }
-               }
-               game::Phase::Complete => {
-                  continue;
                }
             }
          }
@@ -378,7 +411,10 @@ impl Server {
                add_player(
                   Player {
                      name: ai::get_bot_name(),
-                     connection: Connection::Ai(ai),
+                     connection: Connection::Ai(AiState {
+                        core: ai,
+                        is_clandestine: false,
+                     }),
                      turn_number: next_public_id(&lobby.players_by_turn_num),
                   },
                   player_id,
@@ -539,7 +575,7 @@ impl Server {
             &PalaceOutMessage::SpectateLobbyResponse(Ok(SpectateLobbyResponse {
                lobby_players,
                max_players: lobby.max_players,
-               num_spectators: lobby.spectators.len() as u8,
+               num_spectators: lobby.spectators.len() as u8 + 1,
                turn_timer: lobby.turn_timer.as_secs() as u8,
             })),
          );
@@ -654,8 +690,30 @@ impl Server {
             };
 
             match result {
-               Ok(()) => {
-                  report_make_play(&gs, &mut lobby.players, message.player_id);
+               Ok(game_finished) => {
+                  report_make_play(&gs, &mut lobby.players, &mut lobby.spectators, message.player_id);
+                  if game_finished {
+                     let mut players_to_remove = Vec::new();
+                     for (id, player) in &mut lobby.players {
+                        match player.connection {
+                           Connection::Disconnected(_) => {
+                              players_to_remove.push(*id);
+                           }
+                           Connection::Connected(ref mut sender) => {
+                              let _ = serialize_and_send(sender, &PalaceOutMessage::GameCompleteEvent(&gs.out_players));
+                           }
+                           Connection::Ai(_) => (),
+                        }
+                     }
+                     for sender in &mut lobby.spectators {
+                        let _ = serialize_and_send(sender, &PalaceOutMessage::GameCompleteEvent(&gs.out_players));
+                     }
+                     lobby.game = None;
+                     lobby.games_completed += 1;
+                     players_to_remove
+                        .into_iter()
+                        .for_each(|id| remove_player(id, lobby, None));
+                  }
                   Ok(())
                }
                Err(e) => Err(MakePlayError::GameError(e)),
@@ -740,7 +798,17 @@ impl Server {
                         ds.reason = DisconnectedReason::Kicked;
                         Ok(())
                      }
-                     Connection::Ai(_) => Err(KickPlayerError::CantKickAiDuringGame),
+                     Connection::Ai(ref ai) => {
+                        if ai.is_clandestine {
+                           player.connection = Connection::Disconnected(DisconnectedState {
+                              time: Instant::now(),
+                              reason: DisconnectedReason::Kicked,
+                           });
+                           Ok(())
+                        } else {
+                           Err(KickPlayerError::CantKickAiDuringGame)
+                        }
+                     }
                   }
                }
                None => {
@@ -792,6 +860,7 @@ fn create_lobby(
          creation_time: Instant::now(),
          spectators: Vec::new(),
          turn_timer: Duration::from_secs(u64::from(turn_timer)),
+         games_completed: 0,
       },
    );
 
@@ -838,12 +907,12 @@ fn start_game(lobby: &mut Lobby) {
          }
          Connection::Disconnected(_) => (),
          Connection::Ai(ref mut ai) => {
-            ai.on_game_start(GameStartEvent {
+            ai.core.on_game_start(GameStartEvent {
                hand: lobby.game.as_ref().unwrap().get_hand(player.turn_number),
                turn_number: player.turn_number,
                players: &players,
             });
-            ai.on_game_state_update(&public_gs);
+            ai.core.on_game_state_update(&public_gs);
          }
       }
    }
@@ -898,31 +967,36 @@ fn disconnect_old_player(connected_user: &ConnectedUser, lobbies: &mut HashMap<L
                   time: Instant::now(),
                   reason: DisconnectedReason::Left,
                });
-
-               for player in old_lobby.players.values_mut() {
-                  match player.connection {
-                     Connection::Connected(ref mut sender) => {
-                        let _ = serialize_and_send(sender, &PalaceOutMessage::SpectatorLeaveEvent(()));
-                     }
-                     Connection::Disconnected(_) => (),
-                     Connection::Ai(_) => (),
-                  }
-               }
-               for sender in &mut old_lobby.spectators {
-                  let _ = serialize_and_send(sender, &PalaceOutMessage::SpectatorLeaveEvent(()));
-               }
             }
          }
       }
       ConnectedUser::Spectator(old_lobby_id) => {
          if let Some(old_lobby) = lobbies.get_mut(&old_lobby_id) {
             old_lobby.spectators.retain(|x| x.connection_id() != our_sender_id);
+
+            for player in old_lobby.players.values_mut() {
+               match player.connection {
+                  Connection::Connected(ref mut sender) => {
+                     let _ = serialize_and_send(sender, &PalaceOutMessage::SpectatorLeaveEvent(()));
+                  }
+                  Connection::Disconnected(_) => (),
+                  Connection::Ai(_) => (),
+               }
+            }
+            for sender in &mut old_lobby.spectators {
+               let _ = serialize_and_send(sender, &PalaceOutMessage::SpectatorLeaveEvent(()));
+            }
          }
       }
    }
 }
 
-fn report_make_play(gs: &GameState, players: &mut HashMap<PlayerId, Player>, id_of_last_player: PlayerId) {
+fn report_make_play(
+   gs: &GameState,
+   players: &mut HashMap<PlayerId, Player>,
+   spectators: &mut [Sender],
+   id_of_last_player: PlayerId,
+) {
    let public_gs = gs.public_state();
    for (id, player) in players {
       match player.connection {
@@ -935,11 +1009,14 @@ fn report_make_play(gs: &GameState, players: &mut HashMap<PlayerId, Player>, id_
          Connection::Disconnected(_) => (),
          Connection::Ai(ref mut ai) => {
             if *id == id_of_last_player {
-               ai.on_hand_update(gs.get_hand(player.turn_number));
+               ai.core.on_hand_update(gs.get_hand(player.turn_number));
             }
-            ai.on_game_state_update(&public_gs);
+            ai.core.on_game_state_update(&public_gs);
          }
       }
+   }
+   for sender in spectators {
+      let _ = serialize_and_send(sender, &PalaceOutMessage::PublicGameStateEvent(&public_gs));
    }
 }
 
@@ -956,9 +1033,9 @@ fn report_choose_faceup(gs: &GameState, players: &mut HashMap<PlayerId, Player>,
          Connection::Disconnected(_) => (),
          Connection::Ai(ref mut ai) => {
             if *id == id_of_last_player {
-               ai.on_hand_update(gs.get_hand(player.turn_number));
+               ai.core.on_hand_update(gs.get_hand(player.turn_number));
             }
-            ai.on_game_state_update(&public_gs);
+            ai.core.on_game_state_update(&public_gs);
          }
       }
    }
@@ -1000,6 +1077,7 @@ fn add_player(new_player: Player, player_id: PlayerId, lobby: &mut Lobby) {
    }
 }
 
+/// This REMOVES players (from the turn order.) Not meant for game in progress
 fn remove_player(old_player_id: PlayerId, lobby: &mut Lobby, opt_event: Option<LobbyCloseEvent>) {
    let old_player_opt = lobby.players.remove(&old_player_id);
 
@@ -1063,7 +1141,6 @@ fn serialize_and_send(s: &mut Sender, message: &PalaceOutMessage) -> ws::Result<
 }
 
 pub fn run_server(address: &'static str) {
-   pretty_env_logger::init();
    // @Performance this could be a concurrent hashmap
    let lobbies: Arc<RwLock<HashMap<LobbyId, Lobby>>> = Arc::new(RwLock::new(HashMap::new()));
 
@@ -1077,7 +1154,7 @@ pub fn run_server(address: &'static str) {
             let mut lobbies = thread_lobbies.write().unwrap();
             for lobby in lobbies.values_mut() {
                if let Some(ref mut gs) = lobby.game {
-                  if gs.cur_phase == game::Phase::Complete || lobby.turn_timer.as_secs() == 0 {
+                  if lobby.turn_timer.as_secs() == 0 {
                      continue;
                   }
 
@@ -1102,21 +1179,28 @@ pub fn run_server(address: &'static str) {
                                  reason: DisconnectedReason::TimedOut,
                               });
                            }
-                           Connection::Disconnected(_) => (),
+                           Connection::Disconnected(ref mut dc) => {
+                              // Elevate their disconnected status to timed out
+                              // if they had left, so that their turns start
+                              // being taken instantaneously
+                              if dc.reason == DisconnectedReason::Left {
+                                 dc.reason = DisconnectedReason::TimedOut;
+                              }
+                           }
                            Connection::Ai(ref mut ai) => {
                               error!(
                                  "Bot (strategy: {}) failed to take its turn within time limit",
-                                 ai.strategy_name()
+                                 ai.core.strategy_name()
                               );
-                              if ai.strategy_name() != "Random" {
+                              if ai.core.strategy_name() != "Random" {
                                  info!("Falling back to Random");
-                                 *ai = Box::new(ai::random::new());
-                                 ai.on_game_start(GameStartEvent {
+                                 ai.core = Box::new(ai::random::new());
+                                 ai.core.on_game_start(GameStartEvent {
                                     hand: gs.get_hand(player.turn_number),
                                     turn_number: player.turn_number,
                                     players: &HashMap::new(), // Random doesn't need players
                                  });
-                                 ai.on_game_state_update(&gs.public_state());
+                                 ai.core.on_game_state_update(&gs.public_state());
                               }
                            }
                         }
@@ -1145,11 +1229,10 @@ pub fn run_server(address: &'static str) {
                               players: &HashMap::new(), // Random doesn't need players
                            });
                            ai.on_game_state_update(&gs.public_state());
-                           let play = ai.take_turn();
+                           let play = ai::get_play(&gs, &mut *ai);
                            gs.make_play(play).unwrap();
-                           report_make_play(gs, &mut lobby.players, player_id);
+                           report_make_play(gs, &mut lobby.players, &mut lobby.spectators, player_id);
                         }
-                        _ => unreachable!(),
                      }
                   }
                }
@@ -1168,6 +1251,9 @@ pub fn run_server(address: &'static str) {
          {
             let mut lobbies = thread_lobbies.write().unwrap();
             lobbies.retain(|_, lobby| {
+               if !lobby.spectators.is_empty() {
+                  return true;
+               }
                for player in lobby.players.values() {
                   match &player.connection {
                      Connection::Connected(_) => {
@@ -1178,12 +1264,8 @@ pub fn run_server(address: &'static str) {
                            return true;
                         }
                      }
-                     Connection::Ai(_) => {
-                        if let Some(ref game) = lobby.game {
-                           if game.cur_phase != game::Phase::Complete {
-                              return true;
-                           }
-                        } else {
+                     Connection::Ai(ref ai) => {
+                        if ai.is_clandestine {
                            return true;
                         }
                      }
@@ -1219,7 +1301,8 @@ pub fn run_server(address: &'static str) {
 
          // Fill empty slots
          for lobby in lobbies.values_mut().filter(|l| {
-            l.creation_time.elapsed() > Duration::from_secs(10)
+            l.game.is_none()
+               && l.creation_time.elapsed() > Duration::from_secs(10)
                && (l.players.len() as u8) < l.max_players
                && l.password.is_empty()
          }) {
@@ -1228,7 +1311,10 @@ pub fn run_server(address: &'static str) {
             add_player(
                Player {
                   name: ai::get_bot_name_clandestine(),
-                  connection: Connection::Ai(ai),
+                  connection: Connection::Ai(AiState {
+                     core: ai,
+                     is_clandestine: true,
+                  }),
                   turn_number: next_public_id(&lobby.players_by_turn_num),
                },
                player_id,
@@ -1237,10 +1323,13 @@ pub fn run_server(address: &'static str) {
          }
 
          // Create new lobbies
-         if lobbies.len() < 10 {
+         if lobbies.len() < 5 {
             create_lobby(
                &mut lobbies,
-               Connection::Ai(Box::new(ai::random::new())),
+               Connection::Ai(AiState {
+                  core: Box::new(ai::random::new()),
+                  is_clandestine: true,
+               }),
                "botto grotto".into(),
                ai::get_bot_name_clandestine(),
                "".into(),
@@ -1252,7 +1341,7 @@ pub fn run_server(address: &'static str) {
          // Start full lobbies that are owned by bots
          for lobby in lobbies
             .values_mut()
-            .filter(|l| l.players.len() as u8 == l.max_players && l.players[&l.owner].is_ai())
+            .filter(|l| l.game.is_none() && l.players.len() as u8 == l.max_players && l.players[&l.owner].is_ai())
          {
             start_game(lobby);
          }
