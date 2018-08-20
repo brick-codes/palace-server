@@ -3,6 +3,9 @@ pipeline {
 
   stages {
     stage('Build + Test + Coverage') {
+      environment {
+         RUST_BACKTRACE = 1
+      }
       steps {
          sh 'cargo tarpaulin -v -l --count -p palace_server --ignore-tests'
       }
