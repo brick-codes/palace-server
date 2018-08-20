@@ -116,16 +116,6 @@ enum Connection {
    Ai(AiState),
 }
 
-impl Connection {
-   fn get_sender(&mut self) -> Option<&mut ws::Sender> {
-      if let Connection::Connected(ref mut sender) = self {
-         Some(sender)
-      } else {
-         None
-      }
-   }
-}
-
 struct AiState {
    core: Box<dyn PalaceAi + Send + Sync>,
    is_clandestine: bool,
@@ -1255,8 +1245,10 @@ pub fn run_server(address: &'static str) {
                            return true;
                         }
                      }
-                     Connection::Ai(_) => {
-                        return true;
+                     Connection::Ai(ref ai) => {
+                        if ai.is_clandestine {
+                           return true;
+                        }
                      }
                   }
                }
