@@ -4,7 +4,6 @@
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
-extern crate pretty_env_logger;
 extern crate rand;
 #[macro_use]
 extern crate serde_derive;
@@ -1136,7 +1135,6 @@ fn serialize_and_send(s: &mut Sender, message: &PalaceOutMessage) -> ws::Result<
 }
 
 pub fn run_server(address: &'static str) {
-   pretty_env_logger::init();
    // @Performance this could be a concurrent hashmap
    let lobbies: Arc<RwLock<HashMap<LobbyId, Lobby>>> = Arc::new(RwLock::new(HashMap::new()));
 
