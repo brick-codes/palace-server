@@ -232,29 +232,7 @@ fn ai_play(lobbies: &mut HashMap<LobbyId, Lobby>) {
                      Ok(game_finished) => {
                         report_make_play(&gs, &mut lobby.players, &mut lobby.spectators, *player_id);
                         if game_finished {
-                           let mut players_to_remove = Vec::new();
-                           for (id, player) in &mut lobby.players {
-                              match player.connection {
-                                 Connection::Disconnected(_) => {
-                                    players_to_remove.push(*id);
-                                 }
-                                 Connection::Connected(ref mut sender) => {
-                                    let _ = serialize_and_send(
-                                       sender,
-                                       &PalaceOutMessage::GameCompleteEvent(&gs.out_players),
-                                    );
-                                 }
-                                 Connection::Ai(_) => (),
-                              }
-                           }
-                           for sender in &mut lobby.spectators {
-                              let _ = serialize_and_send(sender, &PalaceOutMessage::GameCompleteEvent(&gs.out_players));
-                           }
-                           lobby.game = None;
-                           lobby.games_completed += 1;
-                           players_to_remove
-                              .into_iter()
-                              .for_each(|id| remove_player(id, lobby, None));
+                           end_game(lobby);
                         }
                      }
                      Err(_) => {
@@ -693,26 +671,7 @@ impl Server {
                Ok(game_finished) => {
                   report_make_play(&gs, &mut lobby.players, &mut lobby.spectators, message.player_id);
                   if game_finished {
-                     let mut players_to_remove = Vec::new();
-                     for (id, player) in &mut lobby.players {
-                        match player.connection {
-                           Connection::Disconnected(_) => {
-                              players_to_remove.push(*id);
-                           }
-                           Connection::Connected(ref mut sender) => {
-                              let _ = serialize_and_send(sender, &PalaceOutMessage::GameCompleteEvent(&gs.out_players));
-                           }
-                           Connection::Ai(_) => (),
-                        }
-                     }
-                     for sender in &mut lobby.spectators {
-                        let _ = serialize_and_send(sender, &PalaceOutMessage::GameCompleteEvent(&gs.out_players));
-                     }
-                     lobby.game = None;
-                     lobby.games_completed += 1;
-                     players_to_remove
-                        .into_iter()
-                        .for_each(|id| remove_player(id, lobby, None));
+                     end_game(lobby);
                   }
                   Ok(())
                }
@@ -1140,6 +1099,31 @@ fn serialize_and_send(s: &mut Sender, message: &PalaceOutMessage) -> ws::Result<
    }
 }
 
+/// Panics if game is not in progress
+fn end_game(lobby: &mut Lobby) {
+   let gs = lobby.game.as_ref().unwrap();
+   let mut players_to_remove = Vec::new();
+   for (id, player) in &mut lobby.players {
+      match player.connection {
+         Connection::Disconnected(_) => {
+            players_to_remove.push(*id);
+         }
+         Connection::Connected(ref mut sender) => {
+            let _ = serialize_and_send(sender, &PalaceOutMessage::GameCompleteEvent(&gs.out_players));
+         }
+         Connection::Ai(_) => (),
+      }
+   }
+   for sender in &mut lobby.spectators {
+      let _ = serialize_and_send(sender, &PalaceOutMessage::GameCompleteEvent(&gs.out_players));
+   }
+   lobby.game = None;
+   lobby.games_completed += 1;
+   players_to_remove
+      .into_iter()
+      .for_each(|id| remove_player(id, lobby, None));
+}
+
 pub fn run_server(address: &'static str) {
    // @Performance this could be a concurrent hashmap
    let lobbies: Arc<RwLock<HashMap<LobbyId, Lobby>>> = Arc::new(RwLock::new(HashMap::new()));
@@ -1207,6 +1191,10 @@ pub fn run_server(address: &'static str) {
                      }
 
                      // Make a random play
+                     // The reason why we have to do this here instead of letting the
+                     // AI play loop pick it up is because we want to avoid the scenario
+                     // in which a user gets kicked and immediately reconnects, before the AI
+                     // play loop kicks in, therefore circumventing the turn timer
                      match gs.cur_phase {
                         game::Phase::Setup => {
                            let mut ai = Box::new(ai::random::new());
@@ -1230,8 +1218,11 @@ pub fn run_server(address: &'static str) {
                            });
                            ai.on_game_state_update(&gs.public_state());
                            let play = ai::get_play(&gs, &mut *ai);
-                           gs.make_play(play).unwrap();
+                           let must_end_game = gs.make_play(play).unwrap();
                            report_make_play(gs, &mut lobby.players, &mut lobby.spectators, player_id);
+                           if must_end_game {
+                              end_game(lobby);
+                           }
                         }
                      }
                   }
