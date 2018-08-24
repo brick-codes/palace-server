@@ -330,13 +330,16 @@ impl Server {
                Err(e) => serialize_and_send(&mut self.out, &PalaceOutMessage::JoinLobbyResponse(Err(e))),
             }
          }
-         PalaceInMessage::ListLobbies => {
+         PalaceInMessage::ListLobbies(message) => {
             let lobbies = self.lobbies.read().unwrap();
             // @Performance we should be able to serialize with Serializer::collect_seq
             // and avoid collecting into a vector
             serialize_and_send(
                &mut self.out,
-               &PalaceOutMessage::ListLobbiesResponse(&lobbies.iter().map(|(k, v)| v.display(k)).collect::<Vec<_>>()),
+               &PalaceOutMessage::ListLobbiesResponse(ListLobbyResponse {
+                  lobbies: &lobbies.iter().skip(message.page as usize * 50).map(|(k, v)| v.display(k)).collect::<Vec<_>>(),
+                  has_next_page: lobbies.len() as u64 > (message.page + 1) * 50
+               }),
             )
          }
          PalaceInMessage::StartGame(message) => {

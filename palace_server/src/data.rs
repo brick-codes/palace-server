@@ -206,10 +206,15 @@ pub(crate) enum LobbyCloseEvent {
 }
 
 #[derive(Deserialize)]
+pub(crate) struct ListLobbiesMessage {
+   pub page: u64,
+}
+
+#[derive(Deserialize)]
 pub(crate) enum PalaceInMessage {
    NewLobby(NewLobbyMessage),
    JoinLobby(JoinLobbyMessage),
-   ListLobbies,
+   ListLobbies(ListLobbiesMessage),
    StartGame(StartGameMessage),
    ChooseFaceup(ChooseFaceupMessage),
    MakePlay(MakePlayMessage),
@@ -220,10 +225,16 @@ pub(crate) enum PalaceInMessage {
 }
 
 #[derive(Serialize)]
+pub(crate) struct ListLobbyResponse<'a> {
+   pub lobbies: &'a [LobbyDisplay<'a>],
+   pub has_next_page: bool,
+}
+
+#[derive(Serialize)]
 pub(crate) enum PalaceOutMessage<'a> {
    NewLobbyResponse(Result<NewLobbyResponse, NewLobbyError>),
    JoinLobbyResponse(Result<JoinLobbyResponse<'a>, JoinLobbyError>),
-   ListLobbiesResponse(&'a [LobbyDisplay<'a>]),
+   ListLobbiesResponse(ListLobbyResponse<'a>),
    StartGameResponse(Result<(), StartGameError>),
    ChooseFaceupResponse(Result<(), ChooseFaceupError>),
    MakePlayResponse(Result<(), MakePlayError>),

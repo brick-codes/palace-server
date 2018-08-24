@@ -139,8 +139,13 @@ pub struct PublicGameState {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ListLobbiesResponse {
+   pub lobbies: Box<[LobbyDisplay]>,
+}
+
+#[derive(Debug, Deserialize)]
 pub enum InMessage {
-   ListLobbiesResponse(Box<[LobbyDisplay]>),
+   ListLobbiesResponse(ListLobbiesResponse),
    NewLobbyResponse(Result<NewLobbyResponse, NewLobbyError>),
    RequestAiResponse(Result<(), RequestAiError>),
    KickPlayerResponse(Result<(), KickPlayerError>),
@@ -191,11 +196,16 @@ pub struct StartGameMessage<'a> {
 }
 
 #[derive(Serialize)]
+pub struct ListLobbiesMessage {
+   pub page: u64,
+}
+
+#[derive(Serialize)]
 pub enum OutMessage<'a> {
    NewLobby(NewLobbyMessage<'a>),
    RequestAi(RequestAiMessage<'a>),
    KickPlayer(KickPlayerMessage<'a>),
    JoinLobby(JoinLobbyMessage<'a>),
    StartGame(StartGameMessage<'a>),
-   ListLobbies,
+   ListLobbies(ListLobbiesMessage),
 }
