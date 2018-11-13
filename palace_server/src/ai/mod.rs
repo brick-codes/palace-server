@@ -1,5 +1,5 @@
-use data::GameStartEvent;
-use game::{Card, GameState, PublicGameState};
+use crate::data::GameStartEvent;
+use crate::game::{Card, GameState, PublicGameState};
 use rand::{self, Rng};
 
 pub mod random;
@@ -31,7 +31,7 @@ pub(crate) trait PalaceAi {
 
 pub(crate) fn get_bot_name() -> String {
    let mut name = format!("BOT {}", rand::thread_rng().choose(&NAMES).unwrap());
-   name.truncate(::PLAYER_NAME_LIMIT);
+   name.truncate(crate::PLAYER_NAME_LIMIT);
 
    name
 }
@@ -68,7 +68,7 @@ pub(crate) fn get_bot_name_clandestine() -> String {
    };
 
    let mut name = format!("{}{}", base, suffix);
-   name.truncate(::PLAYER_NAME_LIMIT);
+   name.truncate(crate::PLAYER_NAME_LIMIT);
 
    name
 }

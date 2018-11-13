@@ -1,7 +1,7 @@
 // This AI plays random cards
-use ai::PalaceAi;
-use data::GameStartEvent;
-use game::{Card, PublicGameState};
+use super::PalaceAi;
+use crate::data::GameStartEvent;
+use crate::game::{Card, PublicGameState};
 use rand::{self, Rng};
 
 pub struct RandomAi {

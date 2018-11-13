@@ -1,6 +1,6 @@
-use game::{Card, PublicGameState};
+use crate::game::{Card, PublicGameState};
 use std::collections::HashMap;
-use {LobbyDisplay, LobbyId, PlayerId};
+use crate::{LobbyDisplay, LobbyId, PlayerId};
 
 pub(crate) fn default_turn_timer_secs() -> u8 {
    50

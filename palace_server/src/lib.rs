@@ -15,9 +15,9 @@ mod ai;
 mod data;
 mod game;
 
-use ai::PalaceAi;
-use data::*;
-use game::GameState;
+use crate::ai::PalaceAi;
+use crate::data::*;
+use crate::game::GameState;
 use rand::Rng;
 use serde::{Deserialize, Deserializer, Serializer};
 use std::collections::HashMap;
