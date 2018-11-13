@@ -2,6 +2,8 @@ use crate::data::GameStartEvent;
 use crate::game::{Card, GameState, PublicGameState};
 use rand::{self, Rng};
 
+use lazy_static::lazy_static;
+
 pub mod random;
 
 lazy_static! {

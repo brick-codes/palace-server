@@ -1,16 +1,5 @@
 #![feature(vec_remove_item, nll)]
 
-#[macro_use]
-extern crate lazy_static;
-#[macro_use]
-extern crate log;
-extern crate rand;
-#[macro_use]
-extern crate serde_derive;
-extern crate serde;
-extern crate serde_json;
-extern crate ws;
-
 mod ai;
 mod data;
 mod game;
@@ -20,10 +9,12 @@ use crate::data::*;
 use crate::game::GameState;
 use rand::Rng;
 use serde::{Deserialize, Deserializer, Serializer};
+use serde_derive::{Serialize, Deserialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use ws::{CloseCode, Handler, Handshake, Message, Sender};
+use log::{error, info, debug, trace};
 
 const EMPTY_LOBBY_PRUNE_THRESHOLD_SECS: u64 = 30;
 const PLAYER_NAME_LIMIT: usize = 20;

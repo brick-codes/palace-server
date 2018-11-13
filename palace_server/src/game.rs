@@ -1,5 +1,6 @@
 use rand::{self, Rng};
 use std::time::Instant;
+use serde_derive::{Serialize, Deserialize};
 
 const HAND_SIZE: usize = 6;
 

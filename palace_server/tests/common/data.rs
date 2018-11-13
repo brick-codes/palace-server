@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use serde_derive::{Serialize, Deserialize};
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq)]
 enum CardSuit {

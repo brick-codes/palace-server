@@ -2,6 +2,7 @@
 name = "palace_server"
 version = "0.1.0"
 authors = ["Richard McCormack <brick@brick.codes>"]
+edition = "2018"
 
 [dependencies]
 lazy_static = "1"

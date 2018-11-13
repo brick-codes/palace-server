@@ -1,24 +1,29 @@
-extern crate env_logger;
-extern crate palace_server;
-extern crate parking_lot;
-#[macro_use]
-extern crate serde_derive;
-extern crate serde;
-extern crate serde_json;
-extern crate timebomb;
-extern crate ws;
+#![feature(custom_test_frameworks)]
+#![test_runner(crate::testrunner)]
 
 mod common;
 
-use common::data::*;
-use common::*;
+use crate::common::data::*;
+use crate::common::*;
 use std::time::Duration;
 use timebomb::timeout_ms;
 
-#[test]
-fn lobbies_clean_up() {
-   ensure_test_server_up();
+fn testrunner(cases: &[&dyn Fn()]) {
+   env_logger::init();
+   std::thread::spawn(move || {
+      palace_server::run_server("127.0.0.1:3013");
+   });
+   // TODO ideally this would be a retry ready check
+   std::thread::sleep(Duration::from_secs(5));
+   // TODO: we should run these in parallel (rayon)
+   for t in cases {
+      t();
+   }
+   println!("executed {} tests", cases.len());
+}
 
+#[test_case]
+fn lobbies_clean_up() {
    const JUNK_LOBBY_NAME: &str = "JunkLobby";
 
    // Create a lobby
@@ -44,10 +49,8 @@ fn lobbies_clean_up() {
    }
 }
 
-#[test]
+#[test_case]
 fn bots_join_lobby_after_request() {
-   ensure_test_server_up();
-
    let mut tc = TestClient::new();
    // Create a lobby
    let (player_id, lobby_id) = tc.new_lobby();
@@ -76,10 +79,8 @@ fn bots_join_lobby_after_request() {
    }
 }
 
-#[test]
+#[test_case]
 fn kicking_player_new_player_reuse_id() {
-   ensure_test_server_up();
-
    let mut tc = TestClient::new();
    let (player_id, lobby_id) = tc.new_lobby();
 
@@ -153,10 +154,8 @@ fn kicking_player_new_player_reuse_id() {
    }
 }
 
-#[test]
+#[test_case]
 fn owner_leaving_closes_lobby() {
-   ensure_test_server_up();
-
    let mut owner_tc = TestClient::new();
    let mut player_tc = TestClient::new();
 
@@ -188,10 +187,8 @@ fn owner_leaving_closes_lobby() {
    }
 }
 
-#[test]
+#[test_case]
 fn afk_kick() {
-   ensure_test_server_up();
-
    let mut tc = TestClient::new();
 
    // Create lobby
@@ -230,10 +227,8 @@ fn afk_kick() {
    );
 }
 
-#[test]
+#[test_case]
 fn clandestine_bots_join_lobby() {
-   ensure_test_server_up();
-
    let mut tc = TestClient::new();
 
    let (_player_id, _lobby_id) = tc.new_lobby();

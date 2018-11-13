@@ -2,6 +2,8 @@ use crate::game::{Card, PublicGameState};
 use std::collections::HashMap;
 use crate::{LobbyDisplay, LobbyId, PlayerId};
 
+use serde_derive::{Serialize, Deserialize};
+
 pub(crate) fn default_turn_timer_secs() -> u8 {
    50
 }
