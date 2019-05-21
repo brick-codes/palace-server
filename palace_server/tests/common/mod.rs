@@ -53,7 +53,8 @@ impl TestClient {
             out,
             recvd_messages: tx.clone(),
             to_send_messages: to_send_messages.clone(),
-         }).unwrap();
+         })
+         .unwrap();
       });
       TestClient {
          recvd_messages: rx,
@@ -77,7 +78,8 @@ impl TestClient {
          .to_send_messages
          .send(Vec::from(
             "This message will be unrecognized, causing the connection to end",
-         )).unwrap();
+         ))
+         .unwrap();
    }
 
    pub fn new_lobby(&mut self) -> (String, String) {

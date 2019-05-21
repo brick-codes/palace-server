@@ -38,9 +38,7 @@ fn lobbies_clean_up() {
    // Ensure lobby is cleaned up
    {
       let mut tc = TestClient::new();
-      tc.send(&OutMessage::ListLobbies(ListLobbiesMessage {
-         page: 0,
-      }));
+      tc.send(&OutMessage::ListLobbies(ListLobbiesMessage { page: 0 }));
       let llr = tc.get();
       match llr {
          InMessage::ListLobbiesResponse(r) => assert!(r.lobbies.iter().find(|x| x.name == JUNK_LOBBY_NAME).is_none()),

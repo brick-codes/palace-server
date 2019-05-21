@@ -2,7 +2,8 @@
 use super::PalaceAi;
 use crate::data::GameStartEvent;
 use crate::game::{Card, PublicGameState};
-use rand::{self, Rng};
+use rand::seq::SliceRandom;
+use rand::{self, thread_rng};
 
 pub struct RandomAi {
    hand: Vec<Card>,
@@ -29,9 +30,9 @@ impl PalaceAi for RandomAi {
 
    fn take_turn(&mut self) -> Box<[Card]> {
       if !self.hand.is_empty() {
-         vec![*rand::thread_rng().choose(&self.hand).unwrap()].into_boxed_slice()
+         vec![*self.hand.choose(&mut thread_rng()).unwrap()].into_boxed_slice()
       } else {
-         vec![*rand::thread_rng().choose(&self.faceup_cards).unwrap()].into_boxed_slice()
+         vec![*self.faceup_cards.choose(&mut thread_rng()).unwrap()].into_boxed_slice()
       }
    }
 

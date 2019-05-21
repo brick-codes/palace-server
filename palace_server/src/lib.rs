@@ -1,4 +1,4 @@
-#![feature(vec_remove_item, nll)]
+#![feature(vec_remove_item)]
 
 mod ai;
 mod data;
@@ -7,14 +7,15 @@ mod game;
 use crate::ai::PalaceAi;
 use crate::data::*;
 use crate::game::GameState;
-use rand::Rng;
+use log::{debug, error, info, trace};
+use rand::seq::SliceRandom;
+use rand::{thread_rng, Rng};
 use serde::{Deserialize, Deserializer, Serializer};
-use serde_derive::{Serialize, Deserialize};
+use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use ws::{CloseCode, Handler, Handshake, Message, Sender};
-use log::{error, info, debug, trace};
 
 const EMPTY_LOBBY_PRUNE_THRESHOLD_SECS: u64 = 30;
 const PLAYER_NAME_LIMIT: usize = 20;
@@ -328,8 +329,12 @@ impl Server {
             serialize_and_send(
                &mut self.out,
                &PalaceOutMessage::ListLobbiesResponse(ListLobbyResponse {
-                  lobbies: &lobbies.iter().skip(message.page as usize * 50).map(|(k, v)| v.display(k)).collect::<Vec<_>>(),
-                  has_next_page: lobbies.len() as u64 > (message.page + 1) * 50
+                  lobbies: &lobbies
+                     .iter()
+                     .skip(message.page as usize * 50)
+                     .map(|(k, v)| v.display(k))
+                     .collect::<Vec<_>>(),
+                  has_next_page: lobbies.len() as u64 > (message.page + 1) * 50,
                }),
             )
          }
@@ -828,7 +833,7 @@ fn start_game(lobby: &mut Lobby) {
    let public_gs = lobby.game.as_ref().unwrap().public_state();
 
    let mut turn_numbers: Vec<u8> = (0..num_players).collect();
-   rand::thread_rng().shuffle(&mut turn_numbers);
+   turn_numbers.shuffle(&mut thread_rng());
    let mut turn_numbers = turn_numbers.into_iter();
 
    let mut players = HashMap::new();
@@ -1337,5 +1342,6 @@ pub fn run_server(address: &'static str) {
       out,
       lobbies: lobbies.clone(),
       connected_user: None,
-   }).unwrap()
+   })
+   .unwrap()
 }

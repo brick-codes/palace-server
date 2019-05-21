@@ -1,6 +1,7 @@
-use rand::{self, Rng};
+use rand::seq::SliceRandom;
+use rand::thread_rng;
+use serde_derive::{Deserialize, Serialize};
 use std::time::Instant;
-use serde_derive::{Serialize, Deserialize};
 
 const HAND_SIZE: usize = 6;
 
@@ -84,8 +85,9 @@ impl GameState {
          .map(|(value, suit)| Card {
             suit: *suit,
             value: *value,
-         }).collect();
-      rand::thread_rng().shuffle(&mut deck);
+         })
+         .collect();
+      deck.shuffle(&mut thread_rng());
       let mut deck = deck.into_iter();
       let mut face_down_three = Vec::with_capacity(num_players as usize);
       let mut face_up_three = Vec::with_capacity(num_players as usize);

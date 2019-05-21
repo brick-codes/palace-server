@@ -1,6 +1,7 @@
 use crate::data::GameStartEvent;
 use crate::game::{Card, GameState, PublicGameState};
-use rand::{self, Rng};
+use rand::seq::SliceRandom;
+use rand::{self, thread_rng, Rng};
 
 use lazy_static::lazy_static;
 
@@ -32,7 +33,7 @@ pub(crate) trait PalaceAi {
 }
 
 pub(crate) fn get_bot_name() -> String {
-   let mut name = format!("BOT {}", rand::thread_rng().choose(&NAMES).unwrap());
+   let mut name = format!("BOT {}", NAMES.choose(&mut thread_rng()).unwrap());
    name.truncate(crate::PLAYER_NAME_LIMIT);
 
    name
@@ -40,18 +41,18 @@ pub(crate) fn get_bot_name() -> String {
 
 pub(crate) fn get_bot_name_clandestine() -> String {
    let base = match rand::thread_rng().gen_range(0, 5) {
-      0 => rand::thread_rng().choose(&NAMES).unwrap().to_string(),
-      1 => rand::thread_rng().choose(&NAMES).unwrap().to_ascii_lowercase(),
+      0 => NAMES.choose(&mut thread_rng()).unwrap().to_string(),
+      1 => NAMES.choose(&mut thread_rng()).unwrap().to_ascii_lowercase(),
       2 => format!(
          "{}{}",
-         rand::thread_rng().choose(&NAMES).unwrap(),
-         rand::thread_rng().choose(&LETTERS).unwrap()
+         NAMES.choose(&mut thread_rng()).unwrap(),
+         LETTERS.choose(&mut thread_rng()).unwrap()
       ),
-      3 => rand::thread_rng().choose(&NOUNS).unwrap().to_string(),
+      3 => NOUNS.choose(&mut thread_rng()).unwrap().to_string(),
       4 => format!(
          "{}{}",
-         rand::thread_rng().choose(&ADJECTIVES).unwrap(),
-         rand::thread_rng().choose(&NOUNS).unwrap()
+         ADJECTIVES.choose(&mut thread_rng()).unwrap(),
+         NOUNS.choose(&mut thread_rng()).unwrap()
       ),
       _ => unreachable!(),
    };

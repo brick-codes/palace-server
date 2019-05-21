@@ -7,13 +7,13 @@ edition = "2018"
 [dependencies]
 lazy_static = "1"
 log = "0.4"
-rand = { version = "0.5", features = ["i128_support"] }
+rand = { version = "0.6", features = ["i128_support"] }
 serde = "1"
 serde_derive = "1"
 serde_json = "1"
 ws = { git = "https://github.com/housleyjk/ws-rs" }
 
 [dev-dependencies]
-env_logger = "0.5"
+env_logger = "0.6"
 parking_lot = {version = "0.6", features = ["nightly"]}
 timebomb = "0.1"
