@@ -385,7 +385,7 @@ mod test {
       fn play_card(&mut self, card_val: CardValue) -> Result<bool, &'static str> {
          let card = Card {
             value: card_val,
-            suit: *rand::thread_rng().choose(&SUITS).unwrap(),
+            suit: *SUITS.choose(&mut thread_rng()).unwrap(),
          };
          self.hands[self.active_player as usize] = vec![card];
          self.make_play(vec![card].into_boxed_slice())
