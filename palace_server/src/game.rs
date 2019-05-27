@@ -132,7 +132,7 @@ impl GameState {
             .map(|x| x.len() as u8)
             .collect::<Vec<_>>()
             .into_boxed_slice(),
-         top_card: self.pile_cards.last(),
+         top_card: self.pile_cards.last().cloned(),
          pile_size: self.pile_cards.len() as u16,
          cleared_size: self.cleared_cards.len() as u16,
          cur_phase: self.cur_phase,
@@ -362,7 +362,7 @@ pub(crate) struct PublicGameState<'a> {
    pub hands: Box<[u16]>,
    pub face_up_three: Box<[&'a [Card]]>,
    pub face_down_three: Box<[u8]>,
-   pub top_card: Option<&'a Card>,
+   pub top_card: Option<Card>,
    pub pile_size: u16,
    pub cleared_size: u16,
    pub cur_phase: Phase,
@@ -478,5 +478,16 @@ mod test {
          seen_suits.dedup();
          assert_eq!(seen_suits.len() as u8, i);
       }
+   }
+
+   #[test]
+   fn playing_ten_final_card_turn_rotates() {
+      let mut game = GameState::new_game_skip_setup(4);
+      assert_eq!(game.active_player, 0);
+      game.face_up_three[0].clear();
+      game.face_down_three[0].clear();
+      game.play_card(CardValue::Ten).unwrap();
+      assert_eq!(game.active_player, 1);
+      assert!(game.out_players.contains(&0));
    }
 }
