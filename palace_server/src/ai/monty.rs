@@ -24,8 +24,11 @@ struct Node {
 }
 
 fn uct(node: &Node, parent_simulations: u64) -> f64 {
+   if node.simulations == 0 {
+      return std::f64::INFINITY;
+   }
    let c: f64 = 2.0f64.sqrt();
-   (node.wins as f64 / (node.simulations + 1) as f64) + c * ((parent_simulations as f64).ln() / (node.simulations + 1) as f64).sqrt()
+   (node.wins as f64 / node.simulations as f64) + c * ((parent_simulations as f64).ln() / node.simulations as f64).sqrt()
 }
 
 impl From<Card> for MontyCard {
@@ -170,10 +173,6 @@ fn mcts(g: monte_game::GameState) -> Box<[Card]> {
    let best_move = tree[0].children.iter().enumerate().max_by_key(|(_i, x)| tree[**x].simulations).map(|x| x.0).unwrap_or(0);
    moves.clear();
    all_moves(&mut tree[0].state, &mut moves);
-   //println!("{} sims, {} wins", tree[0].simulations, tree[0].wins);
-   for (i, child) in tree[0].children.iter().enumerate() {
-      //println!("child: {} sims, {} wins (move: {:?})", tree[*child].simulations, tree[*child].wins, moves[i]);
-   }
    moves[best_move].to_vec().into_boxed_slice()
 }
 
