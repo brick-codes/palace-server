@@ -241,7 +241,6 @@ impl PalaceAi for MontyAi {
          g.face_up_three = self.everyone_faceup_cards.clone().into_boxed_slice();
 
          let mut determination_cards: Vec<Card> = unseen_cards.clone();
-         //println!("{}", determination_cards.len());
          determination_cards.shuffle(&mut thread_rng());
 
          // replace all unknown cards with unseen cards
@@ -311,16 +310,9 @@ impl PalaceAi for MontyAi {
 
       let last_player_hand = &mut self.everyone_hands[self.last_player as usize];
 
-      if self.last_player == self.turn_number {
-         //print!("me: ");
-      } else {
-         //print!("other: ");
-      }
-
       // update hand based on cards played
       match new_state.last_played_zone {
          Some(CardZone::Hand) => {
-            //println!("a card was played from hand");
             for card in new_state.last_cards_played {
                let remove_result = last_player_hand.remove_item(&(*card).into());
                if remove_result.is_none() {
@@ -332,14 +324,12 @@ impl PalaceAi for MontyAi {
             }
          }
          Some(CardZone::FaceUpThree) => {
-            //println!("a card was played from fup3");
             let last_player_faceup = &mut self.everyone_faceup_cards[self.last_player as usize];
             for card in new_state.last_cards_played {
                last_player_faceup.remove_item(card).unwrap();
             }
          }
          Some(CardZone::FaceDownThree) => {
-            //println!("a card was played from fd3");
             debug_assert_eq!(new_state.last_cards_played.len(), 1);
             for card in new_state.last_cards_played {
                let num_unseen = self.unseen_cards.get_mut(&card).unwrap();
@@ -347,9 +337,7 @@ impl PalaceAi for MontyAi {
                *num_unseen -= 1;
             }
          }
-         None => {
-            //println!("we dont care");
-         }
+         None => (),
       }
 
       // If pile got picked up, update hand
@@ -361,17 +349,11 @@ impl PalaceAi for MontyAi {
                let y: MontyCard = (*x).into();
                y
             }));
-         //println!("picked up");
-         } else {
-            //println!("cleared");
          }
          self.cur_pile.clear();
-      } else {
-         //println!("did not pick up or clear");
       }
 
       self.last_player = new_state.active_player;
-      //println!("lcp: {:?}", new_state.last_cards_played);
    }
 
    fn on_game_start(&mut self, game_start_event: GameStartEvent) {
