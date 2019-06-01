@@ -1,8 +1,9 @@
 #![feature(vec_remove_item)]
 
-mod ai;
-mod data;
-mod game;
+pub mod ai;
+pub mod data;
+pub mod game;
+pub mod monte_game;
 
 use crate::ai::PalaceAi;
 use crate::data::*;
@@ -23,10 +24,10 @@ const LOBBY_NAME_LIMIT: usize = 20;
 const PASSWORD_LIMIT: usize = 20;
 
 #[derive(PartialEq, Eq, Hash, Serialize, Deserialize, Clone, Copy)]
-struct PlayerId(#[serde(serialize_with = "as_hex_str", deserialize_with = "hex_to_u128")] u128);
+pub struct PlayerId(#[serde(serialize_with = "as_hex_str", deserialize_with = "hex_to_u128")] u128);
 
 #[derive(PartialEq, Eq, Hash, Serialize, Deserialize, Clone, Copy)]
-struct LobbyId(#[serde(serialize_with = "as_hex_str", deserialize_with = "hex_to_u128")] u128);
+pub struct LobbyId(#[serde(serialize_with = "as_hex_str", deserialize_with = "hex_to_u128")] u128);
 
 pub fn as_hex_str<T, S>(token: &T, serializer: S) -> Result<S::Ok, S::Error>
 where
@@ -62,7 +63,7 @@ struct Lobby {
 }
 
 impl Lobby {
-   pub(crate) fn display(&self, lobby_id: &LobbyId) -> LobbyDisplay {
+   pub fn display(&self, lobby_id: &LobbyId) -> LobbyDisplay {
       LobbyDisplay {
          cur_players: self.players.len() as u8,
          ai_players: self.players.values().filter(|p| p.is_requested_ai()).count() as u8,
@@ -81,7 +82,7 @@ impl Lobby {
 }
 
 #[derive(Serialize)]
-pub(crate) struct LobbyDisplay<'a> {
+pub struct LobbyDisplay<'a> {
    pub cur_players: u8,
    pub ai_players: u8,
    pub max_players: u8,
@@ -220,7 +221,7 @@ fn ai_play(lobbies: &mut HashMap<LobbyId, Lobby>) {
                      Connection::Ai(ref mut ai) => ai::get_play(&gs, &mut *ai.core),
                      _ => continue,
                   };
-                  match gs.make_play(play) {
+                  match gs.make_play(&play) {
                      Ok(game_finished) => {
                         report_make_play(&gs, &mut lobby.players, &mut lobby.spectators, *player_id);
                         if game_finished {
@@ -384,7 +385,7 @@ impl Server {
          } else {
             for _ in 0..message.num_ai {
                let player_id = PlayerId(rand::random());
-               let ai: Box<PalaceAi + Send + Sync> = Box::new(ai::random::new());
+               let ai: Box<PalaceAi + Send + Sync> = Box::new(ai::monty::new());
                add_player(
                   Player {
                      name: ai::get_bot_name(),
@@ -661,7 +662,7 @@ impl Server {
                   return Err(MakePlayError::NotYourTurn);
                }
 
-               gs.make_play(message.cards)
+               gs.make_play(&message.cards)
             } else {
                return Err(MakePlayError::PlayerNotFound);
             };
@@ -1217,7 +1218,7 @@ pub fn run_server(address: &'static str) {
                            });
                            ai.on_game_state_update(&gs.public_state());
                            let play = ai::get_play(&gs, &mut *ai);
-                           let must_end_game = gs.make_play(play).unwrap();
+                           let must_end_game = gs.make_play(&play).unwrap();
                            report_make_play(gs, &mut lobby.players, &mut lobby.spectators, player_id);
                            if must_end_game {
                               end_game(lobby);
