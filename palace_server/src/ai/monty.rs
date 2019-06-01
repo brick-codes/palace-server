@@ -13,6 +13,15 @@ enum MontyCard {
    Unknown,
 }
 
+impl MontyCard {
+   fn unwrap_known(&self) -> Card {
+      match self {
+         MontyCard::Known(c) => *c,
+         MontyCard::Unknown => unreachable!(),
+      }
+   }
+}
+
 #[derive(Debug)]
 struct Node {
    state: monte_game::GameState,
@@ -46,7 +55,6 @@ pub struct MontyAi {
    last_player: u8,
    unseen_cards: HashMap<Card, u64>,
    last_phase: Option<game::Phase>,
-   official_hand: Vec<MontyCard>,
 }
 
 pub fn new() -> MontyAi {
@@ -59,7 +67,6 @@ pub fn new() -> MontyAi {
       last_player: 0,
       unseen_cards: HashMap::new(),
       last_phase: None,
-      official_hand: vec![],
    }
 }
 
@@ -182,8 +189,8 @@ impl PalaceAi for MontyAi {
    }
 
    fn choose_three_faceup(&mut self) -> (Card, Card, Card) {
-      let my_faceup = &self.everyone_faceup_cards[self.turn_number as usize];
-      (my_faceup[0], my_faceup[1], my_faceup[2])
+      let my_hand = &self.everyone_hands[self.turn_number as usize];
+      (my_hand[my_hand.len() - 1].unwrap_known(), my_hand[my_hand.len() - 2].unwrap_known(), my_hand[my_hand.len() - 3].unwrap_known()) 
    }
 
    fn take_turn(&mut self) -> Box<[Card]> {
@@ -247,7 +254,8 @@ impl PalaceAi for MontyAi {
          // determination is now determined.
          *best_moves.entry(mcts(g.clone())).or_insert(0u64) += 1;
       }
-      //println!("{:?}", best_moves[0]);
+      let the_move = best_moves.iter().max_by_key(|(_am, freq)| *freq).unwrap().0.clone();
+      println!("{:?}", the_move);
       return best_moves.iter().max_by_key(|(_am, freq)| *freq).unwrap().0.clone();
    }
 
@@ -259,19 +267,29 @@ impl PalaceAi for MontyAi {
 
       if self.last_phase.is_none() {
          for i in 0..new_state.face_up_three.len() {
-            self.everyone_faceup_cards[i].extend_from_slice(new_state.face_up_three[i]);
+            self.everyone_hands[i].extend(new_state.face_up_three[i].iter().map(|x| {
+               let y: MontyCard = (*x).into();
+               y
+            }));
             for card in new_state.face_up_three[i] {
                let num_unseen = self.unseen_cards.get_mut(&card).unwrap();
-               debug_assert!(*num_unseen > 0);
+               assert!(*num_unseen > 0);
                *num_unseen -= 1;
             }
          }
          self.last_phase = Some(game::Phase::Setup)
       } else if self.last_phase == Some(game::Phase::Setup) && new_state.cur_phase == game::Phase::Play {
          for i in 0..new_state.face_up_three.len() {
-            // TODO: diff existing faceup and new faceup, update unseen and hands accordingly
-            self.everyone_faceup_cards[i].clear();
             self.everyone_faceup_cards[i].extend_from_slice(new_state.face_up_three[i]);
+            for card in new_state.face_up_three[i].iter() {
+               let remove_result = self.everyone_hands[i].remove_item(&(*card).into());
+               if remove_result.is_none() {
+                  self.everyone_hands[i].remove_item(&MontyCard::Unknown).unwrap();
+                  let num_unseen = self.unseen_cards.get_mut(&card).unwrap();
+                  assert!(*num_unseen > 0);
+                  *num_unseen -= 1;
+               }
+            }
          }
          self.last_phase = Some(game::Phase::Play);
       }
@@ -296,7 +314,7 @@ impl PalaceAi for MontyAi {
                if remove_result.is_none() {
                   last_player_hand.remove_item(&MontyCard::Unknown).unwrap();
                   let num_unseen = self.unseen_cards.get_mut(&card).unwrap();
-                  debug_assert!(*num_unseen > 0);
+                  assert!(*num_unseen > 0);
                   *num_unseen -= 1;
                }
             }
@@ -310,10 +328,10 @@ impl PalaceAi for MontyAi {
          }
          Some(CardZone::FaceDownThree) => {
             //println!("a card was played from fd3");
-            debug_assert_eq!(new_state.last_cards_played.len(), 1);
+            assert_eq!(new_state.last_cards_played.len(), 1);
             for card in new_state.last_cards_played {
                let num_unseen = self.unseen_cards.get_mut(&card).unwrap();
-               debug_assert!(*num_unseen > 0);
+               assert!(*num_unseen > 0);
                *num_unseen -= 1;
             }
          }
@@ -342,7 +360,6 @@ impl PalaceAi for MontyAi {
 
       self.last_player = new_state.active_player;
       //println!("lcp: {:?}", new_state.last_cards_played);
-      debug_assert_eq!(&self.official_hand, &self.everyone_hands[self.turn_number as usize]);
    }
 
    fn on_game_start(&mut self, game_start_event: GameStartEvent) {
@@ -370,18 +387,9 @@ impl PalaceAi for MontyAi {
          let y: MontyCard = (*x).into();
          y
       }));
-      self.official_hand.extend(game_start_event.hand.iter().map(|x| {
-            let y: MontyCard = (*x).into();
-            y
-         }));
    }
 
-   fn on_hand_update(&mut self, new_hand: &[Card]) {
-      self.official_hand.clear();
-      self.official_hand.extend(new_hand.iter().map(|x| {
-            let y: MontyCard = (*x).into();
-            y
-         }));
+   fn on_hand_update(&mut self, _new_hand: &[Card]) {
       // we just manage our own hand naturally
    }
 }
