@@ -249,7 +249,10 @@ impl GameState {
                }
             }
             CardZone::FaceUpThree => {
-               if self.face_up_three[self.active_player as usize].binary_search(card).is_err() {
+               if self.face_up_three[self.active_player as usize]
+                  .binary_search(card)
+                  .is_err()
+               {
                   return Err("can only play cards that you have");
                }
             }
@@ -269,7 +272,9 @@ impl GameState {
          }
          CardZone::FaceUpThree => {
             for card in cards.iter() {
-               let i = self.face_up_three[self.active_player as usize].binary_search(card).unwrap();
+               let i = self.face_up_three[self.active_player as usize]
+                  .binary_search(card)
+                  .unwrap();
                self.face_up_three[self.active_player as usize].remove(i);
             }
          }

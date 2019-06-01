@@ -1,6 +1,6 @@
+use crate::game::{is_playable_without_pickup, new_deck, Card, CardValue, CardZone, Phase, HAND_SIZE};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
-use crate::game::{Card, HAND_SIZE, Phase, CardZone, new_deck, CardValue, is_playable_without_pickup};
 
 #[derive(Clone, Debug)]
 pub struct GameState {
@@ -104,7 +104,9 @@ impl GameState {
          }
          CardZone::FaceUpThree => {
             for card in cards.iter() {
-               let i = self.face_up_three[self.active_player as usize].binary_search(card).unwrap();
+               let i = self.face_up_three[self.active_player as usize]
+                  .binary_search(card)
+                  .unwrap();
                self.face_up_three[self.active_player as usize].remove(i);
             }
          }

@@ -37,7 +37,8 @@ fn uct(node: &Node, parent_simulations: u64) -> f64 {
       return std::f64::INFINITY;
    }
    let c: f64 = 2.0f64.sqrt();
-   (node.wins as f64 / node.simulations as f64) + c * ((parent_simulations as f64).ln() / node.simulations as f64).sqrt()
+   (node.wins as f64 / node.simulations as f64)
+      + c * ((parent_simulations as f64).ln() / node.simulations as f64).sqrt()
 }
 
 impl From<Card> for MontyCard {
@@ -84,7 +85,7 @@ fn all_moves_zone<'a>(zone: &'a [Card], v: &mut Vec<Box<[Card]>>) {
          found_window_at_size = true;
       }
       window_size += 1;
-   }  
+   }
 }
 
 fn all_moves<'a>(g: &'a monte_game::GameState, v: &mut Vec<Box<[Card]>>) {
@@ -100,7 +101,14 @@ fn all_moves<'a>(g: &'a monte_game::GameState, v: &mut Vec<Box<[Card]>>) {
 }
 
 fn mcts(g: monte_game::GameState) -> Box<[Card]> {
-   let mut tree: Vec<Node> = vec![Node { state: g, parent: 0, wins: 0, simulations: 0, children: vec![], owner: 0 }];
+   let mut tree: Vec<Node> = vec![Node {
+      state: g,
+      parent: 0,
+      wins: 0,
+      simulations: 0,
+      children: vec![],
+      owner: 0,
+   }];
 
    let mut moves = vec![];
    for _ in 0..1000 {
@@ -177,7 +185,13 @@ fn mcts(g: monte_game::GameState) -> Box<[Card]> {
    }
 
    // simulations done, choose best move
-   let best_move = tree[0].children.iter().enumerate().max_by_key(|(_i, x)| tree[**x].simulations).map(|x| x.0).unwrap_or(0);
+   let best_move = tree[0]
+      .children
+      .iter()
+      .enumerate()
+      .max_by_key(|(_i, x)| tree[**x].simulations)
+      .map(|x| x.0)
+      .unwrap_or(0);
    moves.clear();
    all_moves(&mut tree[0].state, &mut moves);
    moves[best_move].to_vec().into_boxed_slice()
@@ -190,7 +204,11 @@ impl PalaceAi for MontyAi {
 
    fn choose_three_faceup(&mut self) -> (Card, Card, Card) {
       let my_hand = &self.everyone_hands[self.turn_number as usize];
-      (my_hand[my_hand.len() - 1].unwrap_known(), my_hand[my_hand.len() - 2].unwrap_known(), my_hand[my_hand.len() - 3].unwrap_known()) 
+      (
+         my_hand[my_hand.len() - 1].unwrap_known(),
+         my_hand[my_hand.len() - 2].unwrap_known(),
+         my_hand[my_hand.len() - 3].unwrap_known(),
+      )
    }
 
    fn take_turn(&mut self) -> Box<[Card]> {
@@ -232,12 +250,8 @@ impl PalaceAi for MontyAi {
             determined_hand.clear();
             for card in known_hand {
                let determined_card = match card {
-                  MontyCard::Known(c) => {
-                     *c
-                  }
-                  MontyCard::Unknown => {
-                     determination_cards.pop().unwrap()
-                  }
+                  MontyCard::Known(c) => *c,
+                  MontyCard::Unknown => determination_cards.pop().unwrap(),
                };
                determined_hand.push(determined_card)
             }
@@ -254,8 +268,6 @@ impl PalaceAi for MontyAi {
          // determination is now determined.
          *best_moves.entry(mcts(g.clone())).or_insert(0u64) += 1;
       }
-      let the_move = best_moves.iter().max_by_key(|(_am, freq)| *freq).unwrap().0.clone();
-      println!("{:?}", the_move);
       return best_moves.iter().max_by_key(|(_am, freq)| *freq).unwrap().0.clone();
    }
 
@@ -273,7 +285,7 @@ impl PalaceAi for MontyAi {
             }));
             for card in new_state.face_up_three[i] {
                let num_unseen = self.unseen_cards.get_mut(&card).unwrap();
-               assert!(*num_unseen > 0);
+               debug_assert!(*num_unseen > 0);
                *num_unseen -= 1;
             }
          }
@@ -286,7 +298,7 @@ impl PalaceAi for MontyAi {
                if remove_result.is_none() {
                   self.everyone_hands[i].remove_item(&MontyCard::Unknown).unwrap();
                   let num_unseen = self.unseen_cards.get_mut(&card).unwrap();
-                  assert!(*num_unseen > 0);
+                  debug_assert!(*num_unseen > 0);
                   *num_unseen -= 1;
                }
             }
@@ -314,7 +326,7 @@ impl PalaceAi for MontyAi {
                if remove_result.is_none() {
                   last_player_hand.remove_item(&MontyCard::Unknown).unwrap();
                   let num_unseen = self.unseen_cards.get_mut(&card).unwrap();
-                  assert!(*num_unseen > 0);
+                  debug_assert!(*num_unseen > 0);
                   *num_unseen -= 1;
                }
             }
@@ -328,10 +340,10 @@ impl PalaceAi for MontyAi {
          }
          Some(CardZone::FaceDownThree) => {
             //println!("a card was played from fd3");
-            assert_eq!(new_state.last_cards_played.len(), 1);
+            debug_assert_eq!(new_state.last_cards_played.len(), 1);
             for card in new_state.last_cards_played {
                let num_unseen = self.unseen_cards.get_mut(&card).unwrap();
-               assert!(*num_unseen > 0);
+               debug_assert!(*num_unseen > 0);
                *num_unseen -= 1;
             }
          }
@@ -349,7 +361,7 @@ impl PalaceAi for MontyAi {
                let y: MontyCard = (*x).into();
                y
             }));
-            //println!("picked up");
+         //println!("picked up");
          } else {
             //println!("cleared");
          }

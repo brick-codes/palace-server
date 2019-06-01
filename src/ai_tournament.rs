@@ -116,7 +116,7 @@ fn run_ai_game(first_player: Ai, second_player: Ai) -> GameResult {
          return GameResult {
             winner: Winner::TimedOut,
             num_turns,
-         }
+         };
       }
    }
 }
@@ -132,30 +132,18 @@ pub fn go() {
          for _ in 0..NUM_GAMES / 2 {
             let result = run_ai_game(AI_ARRAY[i], AI_ARRAY[j]);
             match result.winner {
-               Winner::Player2 => {
-                  j_wins += 1
-               }
-               Winner::Player1 => {
-                  i_wins += 1
-               }
-               Winner::TimedOut => {
-                  draws += 1
-               }
+               Winner::Player2 => j_wins += 1,
+               Winner::Player1 => i_wins += 1,
+               Winner::TimedOut => draws += 1,
             }
             total_turns += result.num_turns
          }
          for _ in 0..NUM_GAMES / 2 {
             let result = run_ai_game(AI_ARRAY[j], AI_ARRAY[i]);
             match result.winner {
-               Winner::Player2 => {
-                  i_wins += 1
-               }
-               Winner::Player1 => {
-                  j_wins += 1
-               }
-               Winner::TimedOut => {
-                  draws += 1
-               }
+               Winner::Player2 => i_wins += 1,
+               Winner::Player1 => j_wins += 1,
+               Winner::TimedOut => draws += 1,
             }
             total_turns += result.num_turns
          }
