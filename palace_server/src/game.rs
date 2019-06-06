@@ -135,7 +135,7 @@ impl GameState {
          face_up_three: self
             .face_up_three
             .iter()
-            .map(|x| x.as_ref())
+            .map(std::convert::AsRef::as_ref)
             .collect::<Vec<_>>()
             .into_boxed_slice(),
          face_down_three: self

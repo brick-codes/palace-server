@@ -13,7 +13,7 @@ enum Ai {
 }
 
 impl Ai {
-   fn new(&self) -> Box<dyn PalaceAi + Send + Sync> {
+   fn instantiate(self) -> Box<dyn PalaceAi + Send + Sync> {
       match self {
          Ai::Random => Box::new(ai::random::new()),
          Ai::Monty => Box::new(ai::monty::new()),
@@ -67,8 +67,8 @@ fn run_ai_game(first_player: Ai, second_player: Ai) -> GameResult {
    let mut game = palace_server::game::GameState::new(2);
    let mut num_turns = 0;
    assert_eq!(game.active_player, 0);
-   let mut first_player = first_player.new();
-   let mut second_player = second_player.new();
+   let mut first_player = first_player.instantiate();
+   let mut second_player = second_player.instantiate();
    let mut players = HashMap::with_capacity(2);
    players.insert(0, first_player.strategy_name().into());
    players.insert(1, second_player.strategy_name().into());
