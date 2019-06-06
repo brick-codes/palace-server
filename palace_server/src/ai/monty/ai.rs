@@ -1,5 +1,6 @@
 // This AI plays random cards
-use super::PalaceAi;
+use super::multivec::MultiVec;
+use crate::ai::PalaceAi;
 use crate::data::GameStartEvent;
 use crate::game::{self, Card, CardZone, PublicGameState};
 use crate::monte_game;
@@ -37,9 +38,6 @@ struct Node {
 }
 
 fn ucb1(node: &Node, parent_simulations: u64) -> f64 {
-   if node.simulations == 0 {
-      return std::f64::INFINITY;
-   }
    (node.wins as f64 / node.simulations as f64)
       + EXPLORATION_VAL * ((parent_simulations as f64).ln() / node.simulations as f64).sqrt()
 }
@@ -90,7 +88,7 @@ impl InformationSet {
                   let c = unseen_cards[unseen_i];
                   unseen_i += 1;
                   c
-               },
+               }
             };
             determined_hands.last_mut().unwrap().push(determined_card)
          }
@@ -107,7 +105,7 @@ impl InformationSet {
             unseen_i += 1;
          }
       }
-      
+
       monte_game::GameState {
          active_player: self.turn_number,
          num_players: num_players as u8,
@@ -138,7 +136,7 @@ pub fn new() -> MontyAi {
 }
 
 /// relies on zone being sorted
-fn all_moves_zone<'a>(zone: &'a [Card], v: &mut Vec<Box<[Card]>>) {
+fn all_moves_zone<'a>(zone: &'a [Card], v: &mut MultiVec<Card>) {
    let mut window_size: usize = 1;
    let mut found_window_at_size = true;
    while found_window_at_size {
@@ -147,14 +145,14 @@ fn all_moves_zone<'a>(zone: &'a [Card], v: &mut Vec<Box<[Card]>>) {
          if window.iter().any(|x| x.value != window[0].value) {
             continue;
          }
-         v.push(window.to_vec().into_boxed_slice());
+         v.add_items(window);
          found_window_at_size = true;
       }
       window_size += 1;
    }
 }
 
-fn all_moves<'a>(g: &'a monte_game::GameState, v: &mut Vec<Box<[Card]>>) {
+fn all_moves<'a>(g: &'a monte_game::GameState, v: &mut MultiVec<Card>) {
    if g.out_players.len() as u8 == g.num_players {
       // game over
       return;
@@ -166,7 +164,7 @@ fn all_moves<'a>(g: &'a monte_game::GameState, v: &mut Vec<Box<[Card]>>) {
    } else if !active_player_fup3.is_empty() {
       all_moves_zone(active_player_fup3, v);
    } else {
-      v.push(vec![].into_boxed_slice());
+      v.add_items(&[]);
    }
 }
 
@@ -181,28 +179,35 @@ fn ismcts(root: &InformationSet, mut unseen_cards: Vec<Card>) -> Box<[Card]> {
       last_player: 0,
    });
 
-   let mut moves = vec![];
+   let mut moves = MultiVec::new();
    for _ in 0..NUM_SIMULATIONS {
       // determine state
       let mut g = root.determine(&mut unseen_cards);
       // select
       let mut cur_node = 0;
-      while tree[cur_node].simulations > 0 {
-         moves.clear();
+      'outer: while tree[cur_node].simulations > 0 {
+         moves.reset();
          all_moves(&g, &mut moves);
 
-         for a_move in moves.iter() {
-            if !tree[cur_node].children.iter().any(|x| tree[*x].last_move.as_ref() == Some(a_move)) {
+         for a_move in moves.get_valid_inner().iter() {
+            if !tree[cur_node]
+               .children
+               .iter()
+               .any(|x| tree[*x].last_move.as_ref().map(|x| &**x) == Some(a_move.as_slice()))
+            {
                let newl = tree.len();
                tree[cur_node].children.push(newl);
                tree.push(Node {
-                  last_move: Some(a_move.clone()),
+                  last_move: Some(a_move.clone().into_boxed_slice()),
                   parent: cur_node,
                   wins: 0,
                   simulations: 0,
                   children: vec![],
                   last_player: g.active_player,
                });
+               cur_node = newl;
+               g.make_play(&a_move).unwrap();
+               break 'outer;
             }
          }
 
@@ -210,14 +215,14 @@ fn ismcts(root: &InformationSet, mut unseen_cards: Vec<Card>) -> Box<[Card]> {
          cur_node = *tree[cur_node]
             .children
             .iter()
-            .filter(|x| moves.contains(tree[**x].last_move.as_ref().unwrap()))
+            .filter(|x| moves.contains_items(tree[**x].last_move.as_ref().unwrap().as_ref()))
             .max_by_key(|x| r64(ucb1(&tree[**x], tree[cur_node].simulations)))
             .unwrap();
+         g.make_play(tree[cur_node].last_move.as_ref().unwrap()).unwrap();
          if tree[cur_node].children.is_empty() {
             // terminal node
             break;
          }
-         g.make_play(tree[cur_node].last_move.as_ref().unwrap()).unwrap();
       }
       // we reached a leaf
       // simulate
@@ -225,9 +230,9 @@ fn ismcts(root: &InformationSet, mut unseen_cards: Vec<Card>) -> Box<[Card]> {
       while (g.out_players.len() as u8) < g.num_players {
          // make a random move
          let rand_move = {
-            moves.clear();
+            moves.reset();
             all_moves(&g, &mut moves);
-            moves.choose(&mut thread_rng()).unwrap()
+            moves.get_valid_inner().choose(&mut thread_rng()).unwrap()
          };
          winner = g.active_player;
          g.make_play(&rand_move).unwrap();
@@ -247,10 +252,6 @@ fn ismcts(root: &InformationSet, mut unseen_cards: Vec<Card>) -> Box<[Card]> {
 
    // simulations done, choose best move
    let best_child = tree[0].children.iter().max_by_key(|x| tree[**x].simulations).unwrap();
-   //println!("---");
-   for child in tree[0].children.iter() {
-      //println!("CHILD: {} sims, {} wins", tree[*child].simulations, tree[*child].wins);
-   }
    tree[*best_child].last_move.clone().unwrap()
 }
 
