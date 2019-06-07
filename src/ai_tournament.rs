@@ -3,7 +3,11 @@ use palace_server::game::GameState;
 use std::collections::HashMap;
 use std::fmt::{self, Display};
 
-const NUM_GAMES: usize = 100;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+
+const NUM_GAMES: usize = 1000;
 
 #[derive(Copy, Clone, Debug)]
 enum Ai {
@@ -124,29 +128,33 @@ fn run_ai_game(first_player: Ai, second_player: Ai) -> GameResult {
 pub fn go() {
    for i in 0..AI_ARRAY.len() {
       for j in i + 1..AI_ARRAY.len() {
-         let mut i_wins: usize = 0;
-         let mut j_wins: usize = 0;
-         let mut draws: usize = 0;
-         let mut total_turns: usize = 0;
+         let i_wins: AtomicUsize = AtomicUsize::new(0);
+         let j_wins: AtomicUsize = AtomicUsize::new(0);
+         let draws: AtomicUsize = AtomicUsize::new(0);
+         let total_turns: AtomicUsize = AtomicUsize::new(0);
          println!("{} vs. {}", AI_ARRAY[i], AI_ARRAY[j]);
-         for _ in 0..NUM_GAMES / 2 {
+         (0..NUM_GAMES / 2).into_par_iter().for_each(|_| {
             let result = run_ai_game(AI_ARRAY[i], AI_ARRAY[j]);
             match result.winner {
-               Winner::Player2 => j_wins += 1,
-               Winner::Player1 => i_wins += 1,
-               Winner::TimedOut => draws += 1,
-            }
-            total_turns += result.num_turns
-         }
-         for _ in 0..NUM_GAMES / 2 {
+               Winner::Player2 => j_wins.fetch_add(1, Ordering::Relaxed),
+               Winner::Player1 => i_wins.fetch_add(1, Ordering::Relaxed),
+               Winner::TimedOut => draws.fetch_add(1, Ordering::Relaxed),
+            };
+            total_turns.fetch_add(result.num_turns, Ordering::Relaxed);
+         });
+         (0..NUM_GAMES / 2).into_par_iter().for_each(|_| {
             let result = run_ai_game(AI_ARRAY[j], AI_ARRAY[i]);
             match result.winner {
-               Winner::Player2 => i_wins += 1,
-               Winner::Player1 => j_wins += 1,
-               Winner::TimedOut => draws += 1,
-            }
-            total_turns += result.num_turns
-         }
+               Winner::Player2 => i_wins.fetch_add(1, Ordering::Relaxed),
+               Winner::Player1 => j_wins.fetch_add(1, Ordering::Relaxed),
+               Winner::TimedOut => draws.fetch_add(1, Ordering::Relaxed),
+            };
+            total_turns.fetch_add(result.num_turns, Ordering::Relaxed);
+         });
+         let i_wins = i_wins.into_inner();
+         let j_wins = j_wins.into_inner();
+         let draws = draws.into_inner();
+         let total_turns = total_turns.into_inner();
          println!(
             "{}: {} wins ({:.2}%) // {}: {} ({:.2}%) || {} draws || avg. game length: {:.2} turns",
             AI_ARRAY[i],
