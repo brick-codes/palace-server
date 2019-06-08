@@ -39,19 +39,8 @@ impl Display for Ai {
 const AI_ARRAY: [Ai; 3] = [Ai::Random, Ai::Monty(0.7, 1000), Ai::LowAndSteady];
 
 fn ai_play(game: &mut GameState, ai_core: &mut (dyn PalaceAi + Send + Sync)) -> bool {
-   match game.cur_phase {
-      palace_server::game::Phase::Setup => {
-         let faceup_three = ai_core.choose_three_faceup();
-         game
-            .choose_three_faceup(faceup_three.0, faceup_three.1, faceup_three.2)
-            .unwrap();
-         false
-      }
-      palace_server::game::Phase::Play => {
-         let cards_to_play = ai::get_play(game, ai_core);
-         game.make_play(&cards_to_play).unwrap()
-      }
-   }
+   let cards_to_play = ai::get_turn(game, ai_core);
+   game.take_turn(&cards_to_play).unwrap()
 }
 
 #[derive(PartialEq)]
@@ -215,7 +204,7 @@ pub fn go() {
             "{}: {} wins ({:.2}%) // {}: {} ({:.2}%) || {} draws || avg. game length: {:.2} turns",
             AI_ARRAY[i],
             res.first_wins,
-            res.second_wins as f64 / NUM_GAMES as f64,
+            res.first_wins as f64 / NUM_GAMES as f64,
             AI_ARRAY[j],
             res.second_wins,
             res.second_wins as f64 / NUM_GAMES as f64,

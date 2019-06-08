@@ -61,11 +61,11 @@ impl PalaceAi for LowAndSteadyAi {
       "Low and Steady"
    }
 
-   fn choose_three_faceup(&mut self) -> (Card, Card, Card) {
-      (self.faceup_cards[0], self.faceup_cards[1], self.faceup_cards[2])
+   fn choose_three_faceup(&mut self) -> Box<[Card]> {
+      self.faceup_cards.clone().into_boxed_slice()
    }
 
-   fn take_turn(&mut self) -> Box<[Card]> {
+   fn make_play(&mut self) -> Box<[Card]> {
       if !self.hand.is_empty() {
          loewst_playable_cards(&self.hand, &self.cur_pile)
       } else {

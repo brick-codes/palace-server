@@ -81,17 +81,8 @@ pub struct StartGameMessage {
    pub player_id: PlayerId,
 }
 
-#[derive(Copy, Clone, Deserialize)]
-pub struct ChooseFaceupMessage {
-   pub lobby_id: LobbyId,
-   pub player_id: PlayerId,
-   pub card_one: Card,
-   pub card_two: Card,
-   pub card_three: Card,
-}
-
 #[derive(Deserialize)]
-pub struct MakePlayMessage {
+pub struct TakeTurnMessage {
    pub lobby_id: LobbyId,
    pub player_id: PlayerId,
    pub cards: Box<[Card]>,
@@ -138,16 +129,7 @@ pub struct KickPlayerMessage {
 }
 
 #[derive(Serialize)]
-pub enum MakePlayError {
-   LobbyNotFound,
-   GameNotStarted,
-   PlayerNotFound,
-   NotYourTurn,
-   GameError(&'static str),
-}
-
-#[derive(Serialize)]
-pub enum ChooseFaceupError {
+pub enum TakeTurnError {
    LobbyNotFound,
    GameNotStarted,
    PlayerNotFound,
@@ -218,8 +200,7 @@ pub enum PalaceInMessage {
    JoinLobby(JoinLobbyMessage),
    ListLobbies(ListLobbiesMessage),
    StartGame(StartGameMessage),
-   ChooseFaceup(ChooseFaceupMessage),
-   MakePlay(MakePlayMessage),
+   TakeTurn(TakeTurnMessage),
    Reconnect(ReconnectMessage),
    RequestAi(RequestAiMessage),
    KickPlayer(KickPlayerMessage),
@@ -238,8 +219,7 @@ pub enum PalaceOutMessage<'a> {
    JoinLobbyResponse(Result<JoinLobbyResponse<'a>, JoinLobbyError>),
    ListLobbiesResponse(ListLobbyResponse<'a>),
    StartGameResponse(Result<(), StartGameError>),
-   ChooseFaceupResponse(Result<(), ChooseFaceupError>),
-   MakePlayResponse(Result<(), MakePlayError>),
+   TakeTurnResponse(Result<(), TakeTurnError>),
    ReconnectResponse(Result<ReconnectResponse, ReconnectError>),
    RequestAiResponse(Result<(), RequestAiError>),
    KickPlayerResponse(Result<(), KickPlayerError>),

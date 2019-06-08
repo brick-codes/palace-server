@@ -154,12 +154,23 @@ impl GameState {
       }
    }
 
-   pub fn choose_three_faceup(&mut self, card_one: Card, card_two: Card, card_three: Card) -> Result<(), &'static str> {
-      // Validate phase
-      if self.cur_phase != Phase::Setup {
-         return Err("Can only choose three faceup cards during Setup phase");
+   /// Return bool = whether or not the game is complete
+   pub fn take_turn(&mut self, cards: &[Card]) -> Result<bool, &'static str> {
+      match self.cur_phase {
+         Phase::Setup => {
+            if cards.len() != 3 {
+               return Err("During setup, must choose exactly three cards");
+            }
+            self.choose_three_faceup(cards[0], cards[1], cards[2])?;
+            Ok(false)
+         }
+         Phase::Play => {
+            self.make_play(cards)
+         },
       }
+   }
 
+   fn choose_three_faceup(&mut self, card_one: Card, card_two: Card, card_three: Card) -> Result<(), &'static str> {
       // Combine hand + face up cards
       let mut all_cards = self.hands[self.active_player as usize].clone();
       all_cards.extend_from_slice(&self.face_up_three[self.active_player as usize]);
@@ -191,6 +202,7 @@ impl GameState {
       self.face_up_three[self.active_player as usize].sort_unstable();
       self.hands[self.active_player as usize] = new_hand;
       self.hands[self.active_player as usize].sort_unstable();
+
       self.rotate_play();
 
       if self.active_player == 0 {
@@ -201,12 +213,7 @@ impl GameState {
    }
 
    /// Return bool = whether or not the game is complete
-   pub fn make_play(&mut self, cards: &[Card]) -> Result<bool, &'static str> {
-      // Validate phase
-      if self.cur_phase != Phase::Play {
-         return Err("Can only play cards during the play phase");
-      }
-
+   fn make_play(&mut self, cards: &[Card]) -> Result<bool, &'static str> {
       // Figure out which zone we are retrieving cards from
       let hand_len = self.hands[self.active_player as usize].len();
       let fup3_len = self.face_up_three[self.active_player as usize].len();

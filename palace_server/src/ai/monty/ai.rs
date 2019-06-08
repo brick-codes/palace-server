@@ -218,7 +218,7 @@ fn ismcts(num_sims: usize, exploration_val: f64, root: &InformationSet, mut unse
                   last_player: g.active_player,
                });
                cur_node = newl;
-               g.make_play(&a_move).unwrap();
+               g.take_turn(&a_move).unwrap();
                break 'outer;
             }
          }
@@ -230,7 +230,7 @@ fn ismcts(num_sims: usize, exploration_val: f64, root: &InformationSet, mut unse
             .filter(|x| moves.contains_items(tree[**x].last_move.as_ref().unwrap().as_ref()))
             .max_by_key(|x| r64(ucb1(exploration_val, &tree[**x], tree[cur_node].simulations)))
             .unwrap();
-         g.make_play(tree[cur_node].last_move.as_ref().unwrap()).unwrap();
+         g.take_turn(tree[cur_node].last_move.as_ref().unwrap()).unwrap();
          if tree[cur_node].children.is_empty() {
             // terminal node
             break;
@@ -247,7 +247,7 @@ fn ismcts(num_sims: usize, exploration_val: f64, root: &InformationSet, mut unse
             moves.get_valid_inner().choose(&mut thread_rng()).unwrap()
          };
          winner = g.active_player;
-         g.make_play(&rand_move).unwrap();
+         g.take_turn(&rand_move).unwrap();
       }
       // backprop
       loop {
@@ -272,16 +272,13 @@ impl PalaceAi for MontyAi {
       "Monty"
    }
 
-   fn choose_three_faceup(&mut self) -> (Card, Card, Card) {
+   fn choose_three_faceup(&mut self) -> Box<[Card]> {
       let my_hand = &self.information_set.everyone_hands[self.information_set.turn_number as usize];
-      (
-         my_hand[my_hand.len() - 1].unwrap_known(),
-         my_hand[my_hand.len() - 2].unwrap_known(),
-         my_hand[my_hand.len() - 3].unwrap_known(),
-      )
+      let len = my_hand.len();
+      my_hand[len - 3..].iter().map(|x| x.unwrap_known()).collect()
    }
 
-   fn take_turn(&mut self) -> Box<[Card]> {
+   fn make_play(&mut self) -> Box<[Card]> {
       let mut unseen_cards: Vec<Card> = Vec::new();
       for (unseen_card, quantity) in self.unseen_cards.iter() {
          for _ in 0..*quantity {

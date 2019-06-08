@@ -182,71 +182,34 @@ fn ai_play(lobbies: &mut HashMap<LobbyId, Lobby>) {
    for lobby in &mut lobbies.values_mut() {
       if let Some(ref mut gs) = lobby.game {
          if let Some(player_id) = lobby.players_by_turn_num.get(&gs.active_player) {
-            match gs.cur_phase {
-               game::Phase::Setup => {
-                  let faceup_three = match lobby.players.get_mut(player_id).unwrap().connection {
-                     Connection::Ai(ref mut ai) => ai.core.choose_three_faceup(),
-                     _ => continue,
-                  };
-                  match gs.choose_three_faceup(faceup_three.0, faceup_three.1, faceup_three.2) {
-                     Ok(()) => {
-                        report_choose_faceup(&gs, &mut lobby.players, *player_id);
-                     }
-                     Err(_) => {
-                        let player = lobby.players.get_mut(player_id).unwrap();
-                        match player.connection {
-                           Connection::Ai(ref mut ai) => {
-                              error!(
-                                 "Bot (strategy: {}) failed to choose three faceup",
-                                 ai.core.strategy_name()
-                              );
-                              if ai.core.strategy_name() != "Random" {
-                                 info!("Falling back to Random");
-                                 ai.core = Box::new(ai::random::new());
-                                 ai.core.on_game_start(GameStartEvent {
-                                    hand: gs.get_hand(player.turn_number),
-                                    turn_number: player.turn_number,
-                                    players: &HashMap::new(), // Random doesn't need players
-                                 });
-                                 ai.core.on_game_state_update(&gs.public_state());
-                              }
-                           }
-                           _ => unreachable!(),
-                        }
-                     }
+            let play = match lobby.players.get_mut(player_id).unwrap().connection {
+               Connection::Ai(ref mut ai) => ai::get_turn(&gs, &mut *ai.core),
+               _ => continue,
+            };
+            match gs.take_turn(&play) {
+               Ok(game_finished) => {
+                  report_take_turn(&gs, &mut lobby.players, &mut lobby.spectators, *player_id);
+                  if game_finished {
+                     end_game(lobby);
                   }
                }
-               game::Phase::Play => {
-                  let play = match lobby.players.get_mut(player_id).unwrap().connection {
-                     Connection::Ai(ref mut ai) => ai::get_play(&gs, &mut *ai.core),
-                     _ => continue,
-                  };
-                  match gs.make_play(&play) {
-                     Ok(game_finished) => {
-                        report_make_play(&gs, &mut lobby.players, &mut lobby.spectators, *player_id);
-                        if game_finished {
-                           end_game(lobby);
+               Err(_) => {
+                  let player = lobby.players.get_mut(player_id).unwrap();
+                  match player.connection {
+                     Connection::Ai(ref mut ai) => {
+                        error!("Bot (strategy: {}) failed to take turn", ai.core.strategy_name());
+                        if ai.core.strategy_name() != "Random" {
+                           info!("Falling back to Random");
+                           ai.core = Box::new(ai::random::new());
+                           ai.core.on_game_start(GameStartEvent {
+                              hand: gs.get_hand(player.turn_number),
+                              turn_number: player.turn_number,
+                              players: &HashMap::new(), // Random doesn't need players
+                           });
+                           ai.core.on_game_state_update(&gs.public_state());
                         }
                      }
-                     Err(_) => {
-                        let player = lobby.players.get_mut(player_id).unwrap();
-                        match player.connection {
-                           Connection::Ai(ref mut ai) => {
-                              error!("Bot (strategy: {}) failed to make play", ai.core.strategy_name());
-                              if ai.core.strategy_name() != "Random" {
-                                 info!("Falling back to Random");
-                                 ai.core = Box::new(ai::random::new());
-                                 ai.core.on_game_start(GameStartEvent {
-                                    hand: gs.get_hand(player.turn_number),
-                                    turn_number: player.turn_number,
-                                    players: &HashMap::new(), // Random doesn't need players
-                                 });
-                                 ai.core.on_game_state_update(&gs.public_state());
-                              }
-                           }
-                           _ => unreachable!(),
-                        }
-                     }
+                     _ => unreachable!(),
                   }
                }
             }
@@ -343,12 +306,8 @@ impl Server {
             let response = PalaceOutMessage::StartGameResponse(self.do_start_game(message));
             serialize_and_send(&mut self.out, &response)
          }
-         PalaceInMessage::ChooseFaceup(message) => {
-            let response = PalaceOutMessage::ChooseFaceupResponse(self.do_choose_faceup(message));
-            serialize_and_send(&mut self.out, &response)
-         }
-         PalaceInMessage::MakePlay(message) => {
-            let response = PalaceOutMessage::MakePlayResponse(self.do_make_play(message));
+         PalaceInMessage::TakeTurn(message) => {
+            let response = PalaceOutMessage::TakeTurnResponse(self.do_take_turn(message));
             serialize_and_send(&mut self.out, &response)
          }
          PalaceInMessage::Reconnect(message) => {
@@ -624,64 +583,35 @@ impl Server {
       }
    }
 
-   fn do_choose_faceup(&mut self, message: ChooseFaceupMessage) -> Result<(), ChooseFaceupError> {
+   fn do_take_turn(&mut self, message: TakeTurnMessage) -> Result<(), TakeTurnError> {
       let mut lobbies = self.lobbies.write().unwrap();
       if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
          if let Some(ref mut gs) = lobby.game {
             let result = if let Some(player) = lobby.players.get(&message.player_id) {
                if player.turn_number != gs.active_player {
-                  return Err(ChooseFaceupError::NotYourTurn);
+                  return Err(TakeTurnError::NotYourTurn);
                }
 
-               gs.choose_three_faceup(message.card_one, message.card_two, message.card_three)
+               gs.take_turn(&message.cards)
             } else {
-               return Err(ChooseFaceupError::PlayerNotFound);
-            };
-
-            match result {
-               Ok(()) => {
-                  report_choose_faceup(&gs, &mut lobby.players, message.player_id);
-                  Ok(())
-               }
-               Err(e) => Err(ChooseFaceupError::GameError(e)),
-            }
-         } else {
-            Err(ChooseFaceupError::GameNotStarted)
-         }
-      } else {
-         Err(ChooseFaceupError::LobbyNotFound)
-      }
-   }
-
-   fn do_make_play(&mut self, message: MakePlayMessage) -> Result<(), MakePlayError> {
-      let mut lobbies = self.lobbies.write().unwrap();
-      if let Some(lobby) = lobbies.get_mut(&message.lobby_id) {
-         if let Some(ref mut gs) = lobby.game {
-            let result = if let Some(player) = lobby.players.get(&message.player_id) {
-               if player.turn_number != gs.active_player {
-                  return Err(MakePlayError::NotYourTurn);
-               }
-
-               gs.make_play(&message.cards)
-            } else {
-               return Err(MakePlayError::PlayerNotFound);
+               return Err(TakeTurnError::PlayerNotFound);
             };
 
             match result {
                Ok(game_finished) => {
-                  report_make_play(&gs, &mut lobby.players, &mut lobby.spectators, message.player_id);
+                  report_take_turn(&gs, &mut lobby.players, &mut lobby.spectators, message.player_id);
                   if game_finished {
                      end_game(lobby);
                   }
                   Ok(())
                }
-               Err(e) => Err(MakePlayError::GameError(e)),
+               Err(e) => Err(TakeTurnError::GameError(e)),
             }
          } else {
-            return Err(MakePlayError::GameNotStarted);
+            return Err(TakeTurnError::GameNotStarted);
          }
       } else {
-         return Err(MakePlayError::LobbyNotFound);
+         return Err(TakeTurnError::LobbyNotFound);
       }
    }
 
@@ -950,7 +880,7 @@ fn disconnect_old_player(connected_user: &ConnectedUser, lobbies: &mut HashMap<L
    }
 }
 
-fn report_make_play(
+fn report_take_turn(
    gs: &GameState,
    players: &mut HashMap<PlayerId, Player>,
    spectators: &mut [Sender],
@@ -976,27 +906,6 @@ fn report_make_play(
    }
    for sender in spectators {
       let _ = serialize_and_send(sender, &PalaceOutMessage::PublicGameStateEvent(&public_gs));
-   }
-}
-
-fn report_choose_faceup(gs: &GameState, players: &mut HashMap<PlayerId, Player>, id_of_last_player: PlayerId) {
-   let public_gs = gs.public_state();
-   for (id, player) in players {
-      match player.connection {
-         Connection::Connected(ref mut sender) => {
-            if *id == id_of_last_player {
-               let _ = serialize_and_send(sender, &PalaceOutMessage::HandEvent(gs.get_hand(player.turn_number)));
-            }
-            let _ = serialize_and_send(sender, &PalaceOutMessage::PublicGameStateEvent(&public_gs));
-         }
-         Connection::Disconnected(_) => (),
-         Connection::Ai(ref mut ai) => {
-            if *id == id_of_last_player {
-               ai.core.on_hand_update(gs.get_hand(player.turn_number));
-            }
-            ai.core.on_game_state_update(&public_gs);
-         }
-      }
    }
 }
 
@@ -1195,35 +1104,18 @@ pub fn run_server(address: &'static str) {
                      // AI play loop pick it up is because we want to avoid the scenario
                      // in which a user gets kicked and immediately reconnects, before the AI
                      // play loop kicks in, therefore circumventing the turn timer
-                     match gs.cur_phase {
-                        game::Phase::Setup => {
-                           let mut ai = Box::new(ai::random::new());
-                           ai.on_game_start(GameStartEvent {
-                              hand: gs.get_hand(gs.active_player),
-                              turn_number: gs.active_player,
-                              players: &HashMap::new(), // Random doesn't need players
-                           });
-                           ai.on_game_state_update(&gs.public_state());
-                           let faceup_three = ai.choose_three_faceup();
-                           gs.choose_three_faceup(faceup_three.0, faceup_three.1, faceup_three.2)
-                              .unwrap();
-                           report_choose_faceup(gs, &mut lobby.players, player_id);
-                        }
-                        game::Phase::Play => {
-                           let mut ai = Box::new(ai::random::new());
-                           ai.on_game_start(GameStartEvent {
-                              hand: gs.get_hand(gs.active_player),
-                              turn_number: gs.active_player,
-                              players: &HashMap::new(), // Random doesn't need players
-                           });
-                           ai.on_game_state_update(&gs.public_state());
-                           let play = ai::get_play(&gs, &mut *ai);
-                           let must_end_game = gs.make_play(&play).unwrap();
-                           report_make_play(gs, &mut lobby.players, &mut lobby.spectators, player_id);
-                           if must_end_game {
-                              end_game(lobby);
-                           }
-                        }
+                     let mut ai = Box::new(ai::random::new());
+                     ai.on_game_start(GameStartEvent {
+                        hand: gs.get_hand(gs.active_player),
+                        turn_number: gs.active_player,
+                        players: &HashMap::new(), // Random doesn't need players
+                     });
+                     ai.on_game_state_update(&gs.public_state());
+                     let play = ai::get_turn(&gs, &mut *ai);
+                     let must_end_game = gs.take_turn(&play).unwrap();
+                     report_take_turn(gs, &mut lobby.players, &mut lobby.spectators, player_id);
+                     if must_end_game {
+                        end_game(lobby);
                      }
                   }
                }
