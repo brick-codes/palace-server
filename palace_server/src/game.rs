@@ -319,7 +319,7 @@ impl GameState {
          false
       };
 
-      if (is_playable && play_value == CardValue::Ten) || self.top_n_cards_same() {
+      if (is_playable && play_value == CardValue::Ten) || top_n_cards_same(&self.pile_cards, self.num_players as usize) {
          self.cleared_cards.extend_from_slice(&self.pile_cards);
          self.pile_cards.clear();
          if player_out {
@@ -330,25 +330,6 @@ impl GameState {
       }
 
       Ok(false)
-   }
-
-   fn top_n_cards_same(&self) -> bool {
-      let top_value = if let Some(card) = self.pile_cards.last() {
-         card.value
-      } else {
-         return false;
-      };
-      let mut top_n_same = 0;
-      for card in self.pile_cards.iter().rev() {
-         if card.value == top_value {
-            top_n_same += 1;
-         } else if card.value == CardValue::Four {
-            continue;
-         } else {
-            break;
-         }
-      }
-      top_n_same == self.num_players
    }
 
    pub fn get_hand(&self, player_num: u8) -> &[Card] {
@@ -373,6 +354,25 @@ impl GameState {
       self.active_player = self.next_player();
       self.last_turn_start = Instant::now();
    }
+}
+
+pub fn top_n_cards_same(pile: &[Card], n: usize) -> bool {
+   let top_value = if let Some(card) = pile.last() {
+      card.value
+   } else {
+      return false;
+   };
+   let mut top_n_same = 0;
+   for card in pile.iter().rev() {
+      if card.value == top_value {
+         top_n_same += 1;
+      } else if card.value == CardValue::Four {
+         continue;
+      } else {
+         break;
+      }
+   }
+   top_n_same >= n
 }
 
 pub fn is_playable_without_pickup(card_value: CardValue, pile: &[Card]) -> bool {

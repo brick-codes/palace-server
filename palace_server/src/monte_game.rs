@@ -1,4 +1,4 @@
-use crate::game::{is_playable_without_pickup, new_deck, Card, CardValue, CardZone, Phase, HAND_SIZE};
+use crate::game::{top_n_cards_same, is_playable_without_pickup, new_deck, Card, CardValue, CardZone, Phase, HAND_SIZE};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 
@@ -152,7 +152,7 @@ impl GameState {
          false
       };
 
-      if (is_playable && play_value == CardValue::Ten) || self.top_n_cards_same() {
+      if (is_playable && play_value == CardValue::Ten) || top_n_cards_same(&self.pile_cards, self.num_players as usize) {
          self.pile_cards.clear();
          if player_out {
             self.rotate_play();
@@ -162,25 +162,6 @@ impl GameState {
       }
 
       Ok(false)
-   }
-
-   fn top_n_cards_same(&self) -> bool {
-      let top_value = if let Some(card) = self.pile_cards.last() {
-         card.value
-      } else {
-         return false;
-      };
-      let mut top_n_same = 0;
-      for card in self.pile_cards.iter().rev() {
-         if card.value == top_value {
-            top_n_same += 1;
-         } else if card.value == CardValue::Four {
-            continue;
-         } else {
-            break;
-         }
-      }
-      top_n_same == self.num_players
    }
 
    pub fn get_hand(&self, player_num: u8) -> &[Card] {
