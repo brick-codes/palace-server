@@ -9,9 +9,6 @@ use rand::seq::SliceRandom;
 use rand::{self, thread_rng};
 use std::collections::HashMap;
 
-const NUM_SIMULATIONS: usize = 1000;
-const EXPLORATION_VAL: f64 = 0.7;
-
 #[derive(Copy, Clone, Debug, PartialEq)]
 enum MontyCard {
    Known(Card),
@@ -37,9 +34,9 @@ struct Node {
    children: Vec<usize>,
 }
 
-fn ucb1(node: &Node, parent_simulations: u64) -> f64 {
+fn ucb1(exploration_val: f64, node: &Node, parent_simulations: u64) -> f64 {
    (node.wins as f64 / node.simulations as f64)
-      + EXPLORATION_VAL * ((parent_simulations as f64).ln() / node.simulations as f64).sqrt()
+      + exploration_val * ((parent_simulations as f64).ln() / node.simulations as f64).sqrt()
 }
 
 impl From<Card> for MontyCard {
@@ -124,6 +121,8 @@ pub struct MontyAi {
    last_player: u8,
    unseen_cards: HashMap<Card, u64>,
    last_phase: Option<game::Phase>,
+   exploration_val: f64,
+   num_sims: usize,
 }
 
 pub fn new() -> MontyAi {
@@ -132,6 +131,19 @@ pub fn new() -> MontyAi {
       last_player: 0,
       unseen_cards: HashMap::new(),
       last_phase: None,
+      exploration_val: 0.7,
+      num_sims: 1000,
+   }
+}
+
+pub fn with_parameters(exploration_val: f64, num_sims: usize) -> MontyAi {
+   MontyAi {
+      information_set: InformationSet::new(),
+      last_player: 0,
+      unseen_cards: HashMap::new(),
+      last_phase: None,
+      exploration_val,
+      num_sims,
    }
 }
 
@@ -168,8 +180,8 @@ fn all_moves<'a>(g: &'a monte_game::GameState, v: &mut MultiVec<Card>) {
    }
 }
 
-fn ismcts(root: &InformationSet, mut unseen_cards: Vec<Card>) -> Box<[Card]> {
-   let mut tree: Vec<Node> = Vec::with_capacity(NUM_SIMULATIONS);
+fn ismcts(num_sims: usize, exploration_val: f64, root: &InformationSet, mut unseen_cards: Vec<Card>) -> Box<[Card]> {
+   let mut tree: Vec<Node> = Vec::with_capacity(num_sims);
    tree.push(Node {
       last_move: None,
       parent: 0,
@@ -180,7 +192,7 @@ fn ismcts(root: &InformationSet, mut unseen_cards: Vec<Card>) -> Box<[Card]> {
    });
 
    let mut moves = MultiVec::new();
-   for _ in 0..NUM_SIMULATIONS {
+   for _ in 0..num_sims {
       // determine state
       let mut g = root.determine(&mut unseen_cards);
       // select
@@ -216,7 +228,7 @@ fn ismcts(root: &InformationSet, mut unseen_cards: Vec<Card>) -> Box<[Card]> {
             .children
             .iter()
             .filter(|x| moves.contains_items(tree[**x].last_move.as_ref().unwrap().as_ref()))
-            .max_by_key(|x| r64(ucb1(&tree[**x], tree[cur_node].simulations)))
+            .max_by_key(|x| r64(ucb1(exploration_val, &tree[**x], tree[cur_node].simulations)))
             .unwrap();
          g.make_play(tree[cur_node].last_move.as_ref().unwrap()).unwrap();
          if tree[cur_node].children.is_empty() {
@@ -277,7 +289,7 @@ impl PalaceAi for MontyAi {
          }
       }
 
-      ismcts(&self.information_set, unseen_cards)
+      ismcts(self.num_sims, self.exploration_val, &self.information_set, unseen_cards)
    }
 
    fn on_game_state_update(&mut self, new_state: &PublicGameState) {

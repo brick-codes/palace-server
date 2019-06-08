@@ -12,7 +12,7 @@ const NUM_GAMES: usize = 1000;
 #[derive(Copy, Clone, Debug)]
 enum Ai {
    Random,
-   Monty,
+   Monty(f64, usize),
    LowAndSteady,
 }
 
@@ -20,7 +20,7 @@ impl Ai {
    fn instantiate(self) -> Box<dyn PalaceAi + Send + Sync> {
       match self {
          Ai::Random => Box::new(ai::random::new()),
-         Ai::Monty => Box::new(ai::monty::new()),
+         Ai::Monty(c, sims) => Box::new(ai::monty::with_parameters(c, sims)),
          Ai::LowAndSteady => Box::new(ai::low_and_steady::new()),
       }
    }
@@ -28,16 +28,15 @@ impl Ai {
 
 impl Display for Ai {
    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-      let s = match self {
-         Ai::Random => "Random",
-         Ai::Monty => "Monty",
-         Ai::LowAndSteady => "Low and Steady",
-      };
-      write!(f, "{}", s)
+      match self {
+         Ai::Random => write!(f, "Random"),
+         Ai::Monty(c, sims) => write!(f, "Monty (c={}, {} sims)", c, sims),
+         Ai::LowAndSteady => write!(f, "Low and Steady"),
+      }
    }
 }
 
-const AI_ARRAY: [Ai; 3] = [Ai::Random, Ai::Monty, Ai::LowAndSteady];
+const AI_ARRAY: [Ai; 3] = [Ai::Random, Ai::Monty(0.7, 1000), Ai::LowAndSteady];
 
 fn ai_play(game: &mut GameState, ai_core: &mut (dyn PalaceAi + Send + Sync)) -> bool {
    match game.cur_phase {
@@ -125,46 +124,103 @@ fn run_ai_game(first_player: Ai, second_player: Ai) -> GameResult {
    }
 }
 
+struct DuelResult {
+   first_wins: usize,
+   second_wins: usize,
+   draws: usize,
+   total_turns: usize,
+}
+
+fn ai_duel(first_ai: Ai, second_ai: Ai) -> DuelResult {
+   let i_wins: AtomicUsize = AtomicUsize::new(0);
+   let j_wins: AtomicUsize = AtomicUsize::new(0);
+   let draws: AtomicUsize = AtomicUsize::new(0);
+   let total_turns: AtomicUsize = AtomicUsize::new(0);
+   println!("{} vs. {}", first_ai, second_ai);
+   (0..NUM_GAMES / 2).into_par_iter().for_each(|_| {
+      let result = run_ai_game(first_ai, second_ai);
+      match result.winner {
+         Winner::Player2 => j_wins.fetch_add(1, Ordering::Relaxed),
+         Winner::Player1 => i_wins.fetch_add(1, Ordering::Relaxed),
+         Winner::TimedOut => draws.fetch_add(1, Ordering::Relaxed),
+      };
+      total_turns.fetch_add(result.num_turns, Ordering::Relaxed);
+   });
+   (0..NUM_GAMES / 2).into_par_iter().for_each(|_| {
+      let result = run_ai_game(second_ai, first_ai);
+      match result.winner {
+         Winner::Player2 => i_wins.fetch_add(1, Ordering::Relaxed),
+         Winner::Player1 => j_wins.fetch_add(1, Ordering::Relaxed),
+         Winner::TimedOut => draws.fetch_add(1, Ordering::Relaxed),
+      };
+      total_turns.fetch_add(result.num_turns, Ordering::Relaxed);
+   });
+   DuelResult {
+      first_wins: i_wins.into_inner(),
+      second_wins: j_wins.into_inner(),
+      draws: draws.into_inner(),
+      total_turns: total_turns.into_inner(),
+   }
+}
+
+pub fn monty_report() {
+   let exploration_vals = [0.7, std::f64::consts::SQRT_2];
+   let num_simulations = [25, 50, 100, 250, 500, 1000, 2000];
+   let opponents = [Ai::LowAndSteady, Ai::Random];
+   let mut outputs = vec![];
+
+   use std::fs::File;
+   use std::io::{BufWriter, Write};
+
+   for opponent in opponents.iter() {
+      let name = format!("vs_{}.csv", opponent);
+      outputs.push(BufWriter::new(File::create(&name).unwrap()))
+   }
+
+   for output in outputs.iter_mut() {
+      writeln!(
+         output,
+         "exploration_constant,number_of_simulations,wins,losses,draws,score,total_turns"
+      )
+      .unwrap();
+   }
+
+   for c_val in exploration_vals.iter() {
+      for num_sims in num_simulations.iter() {
+         let monty = Ai::Monty(*c_val, *num_sims);
+         for (opponent, output) in opponents.iter().zip(outputs.iter_mut()) {
+            let vs_result = ai_duel(monty, *opponent);
+            writeln!(
+               output,
+               "{},{},{},{},{},{},{}",
+               c_val,
+               num_sims,
+               vs_result.first_wins,
+               vs_result.second_wins,
+               vs_result.draws,
+               vs_result.first_wins as f64 + vs_result.draws as f64 / 2.0,
+               vs_result.total_turns
+            )
+            .unwrap();
+         }
+      }
+   }
+}
+
 pub fn go() {
    for i in 0..AI_ARRAY.len() {
       for j in i + 1..AI_ARRAY.len() {
-         let i_wins: AtomicUsize = AtomicUsize::new(0);
-         let j_wins: AtomicUsize = AtomicUsize::new(0);
-         let draws: AtomicUsize = AtomicUsize::new(0);
-         let total_turns: AtomicUsize = AtomicUsize::new(0);
-         println!("{} vs. {}", AI_ARRAY[i], AI_ARRAY[j]);
-         (0..NUM_GAMES / 2).into_par_iter().for_each(|_| {
-            let result = run_ai_game(AI_ARRAY[i], AI_ARRAY[j]);
-            match result.winner {
-               Winner::Player2 => j_wins.fetch_add(1, Ordering::Relaxed),
-               Winner::Player1 => i_wins.fetch_add(1, Ordering::Relaxed),
-               Winner::TimedOut => draws.fetch_add(1, Ordering::Relaxed),
-            };
-            total_turns.fetch_add(result.num_turns, Ordering::Relaxed);
-         });
-         (0..NUM_GAMES / 2).into_par_iter().for_each(|_| {
-            let result = run_ai_game(AI_ARRAY[j], AI_ARRAY[i]);
-            match result.winner {
-               Winner::Player2 => i_wins.fetch_add(1, Ordering::Relaxed),
-               Winner::Player1 => j_wins.fetch_add(1, Ordering::Relaxed),
-               Winner::TimedOut => draws.fetch_add(1, Ordering::Relaxed),
-            };
-            total_turns.fetch_add(result.num_turns, Ordering::Relaxed);
-         });
-         let i_wins = i_wins.into_inner();
-         let j_wins = j_wins.into_inner();
-         let draws = draws.into_inner();
-         let total_turns = total_turns.into_inner();
+         let res = ai_duel(AI_ARRAY[i], AI_ARRAY[j]);
          println!(
             "{}: {} wins ({:.2}%) // {}: {} ({:.2}%) || {} draws || avg. game length: {:.2} turns",
             AI_ARRAY[i],
-            i_wins,
-            i_wins as f64 / NUM_GAMES as f64,
+            res.first_wins,
+            res.second_wins as f64 / NUM_GAMES as f64,
             AI_ARRAY[j],
-            j_wins,
-            j_wins as f64 / NUM_GAMES as f64,
-            draws as f64,
-            total_turns as f64 / NUM_GAMES as f64
+            res.second_wins,
+            res.second_wins as f64 / NUM_GAMES as f64,
+            res.draws as f64,
+            res.total_turns as f64 / NUM_GAMES as f64
          )
       }
    }
