@@ -77,7 +77,7 @@ impl InformationSet {
       let mut determined_hands = Vec::with_capacity(num_players);
 
       for known_hand in self.everyone_hands.iter() {
-         determined_hands.push(Vec::with_capacity(known_hand.len()));
+         let mut determined_hand = Vec::with_capacity(known_hand.len());
          for card in known_hand {
             let determined_card = match card {
                MontyCard::Known(c) => *c,
@@ -87,20 +87,22 @@ impl InformationSet {
                   c
                }
             };
-            determined_hands.last_mut().unwrap().push(determined_card)
+            determined_hand.push(determined_card)
          }
-         determined_hands.last_mut().unwrap().sort_unstable();
+         determined_hand.sort_unstable();
+         determined_hands.push(determined_hand);
       }
 
       // then, face down cards
       let mut determined_fdt = Vec::with_capacity(num_players);
 
       for len in self.everyone_facedown_cards.iter().map(|x| *x) {
-         determined_fdt.push(Vec::with_capacity(len as usize));
+         let mut a_determined_fdt = Vec::with_capacity(len as usize);
          for _ in 0..len {
-            determined_fdt.last_mut().unwrap().push(unseen_cards[unseen_i]);
+            a_determined_fdt.push(unseen_cards[unseen_i]);
             unseen_i += 1;
          }
+         determined_fdt.push(a_determined_fdt);
       }
 
       monte_game::GameState {

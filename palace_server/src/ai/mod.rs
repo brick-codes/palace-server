@@ -1,5 +1,5 @@
 use crate::data::GameStartEvent;
-use crate::game::{Card, GameState, PublicGameState, Phase};
+use crate::game::{Card, GameState, Phase, PublicGameState};
 use rand::seq::SliceRandom;
 use rand::{self, thread_rng, Rng};
 
@@ -83,12 +83,8 @@ pub fn get_turn(gs: &GameState, ai_core: &mut (dyn PalaceAi + Send + Sync)) -> B
       vec![].into_boxed_slice()
    } else {
       match gs.cur_phase {
-         Phase::Play => {
-            ai_core.make_play()
-         }
-         Phase::Setup => {
-            ai_core.choose_three_faceup()
-         }
+         Phase::Play => ai_core.make_play(),
+         Phase::Setup => ai_core.choose_three_faceup(),
       }
    }
 }

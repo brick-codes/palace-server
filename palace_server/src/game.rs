@@ -164,9 +164,7 @@ impl GameState {
             self.choose_three_faceup(cards[0], cards[1], cards[2])?;
             Ok(false)
          }
-         Phase::Play => {
-            self.make_play(cards)
-         },
+         Phase::Play => self.make_play(cards),
       }
    }
 
@@ -319,7 +317,8 @@ impl GameState {
          false
       };
 
-      if (is_playable && play_value == CardValue::Ten) || top_n_cards_same(&self.pile_cards, self.num_players as usize) {
+      if (is_playable && play_value == CardValue::Ten) || top_n_cards_same(&self.pile_cards, self.num_players as usize)
+      {
          self.cleared_cards.extend_from_slice(&self.pile_cards);
          self.pile_cards.clear();
          if player_out {

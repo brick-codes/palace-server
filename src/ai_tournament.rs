@@ -197,15 +197,17 @@ pub fn monty_report() {
 }
 
 pub fn go() {
-   for i in 0..AI_ARRAY.len() {
-      for j in i + 1..AI_ARRAY.len() {
-         let res = ai_duel(AI_ARRAY[i], AI_ARRAY[j]);
+   for (i, ai_1) in AI_ARRAY.iter().enumerate() {
+      let ai_1 = *ai_1;
+      for ai_2 in AI_ARRAY[i + 1..].iter() {
+         let ai_2 = *ai_2;
+         let res = ai_duel(ai_1, ai_2);
          println!(
             "{}: {} wins ({:.2}%) // {}: {} ({:.2}%) || {} draws || avg. game length: {:.2} turns",
-            AI_ARRAY[i],
+            ai_1,
             res.first_wins,
             res.first_wins as f64 / NUM_GAMES as f64,
-            AI_ARRAY[j],
+            ai_2,
             res.second_wins,
             res.second_wins as f64 / NUM_GAMES as f64,
             res.draws as f64,

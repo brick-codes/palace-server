@@ -1,4 +1,6 @@
-use crate::game::{top_n_cards_same, is_playable_without_pickup, new_deck, Card, CardValue, CardZone, Phase, HAND_SIZE};
+use crate::game::{
+   is_playable_without_pickup, new_deck, top_n_cards_same, Card, CardValue, CardZone, Phase, HAND_SIZE,
+};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 
@@ -46,9 +48,7 @@ impl GameState {
             self.choose_three_faceup(cards[0], cards[1], cards[2])?;
             Ok(false)
          }
-         Phase::Play => {
-            self.make_play(cards)
-         },
+         Phase::Play => self.make_play(cards),
       }
    }
 
@@ -152,7 +152,8 @@ impl GameState {
          false
       };
 
-      if (is_playable && play_value == CardValue::Ten) || top_n_cards_same(&self.pile_cards, self.num_players as usize) {
+      if (is_playable && play_value == CardValue::Ten) || top_n_cards_same(&self.pile_cards, self.num_players as usize)
+      {
          self.pile_cards.clear();
          if player_out {
             self.rotate_play();
