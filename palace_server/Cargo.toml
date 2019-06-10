@@ -5,6 +5,7 @@ authors = ["Richard McCormack <brick@brick.codes>"]
 edition = "2018"
 
 [dependencies]
+itertools = "0.8"
 lazy_static = "1"
 log = "0.4"
 noisy_float = "0.1"

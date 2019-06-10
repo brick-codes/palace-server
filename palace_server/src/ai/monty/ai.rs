@@ -2,7 +2,7 @@
 use super::multivec::MultiVec;
 use crate::ai::PalaceAi;
 use crate::data::GameStartEvent;
-use crate::game::{self, Card, CardZone, PublicGameState};
+use crate::game::{self, Card, CardZone, PublicGameState, Phase};
 use crate::monte_game;
 use noisy_float::prelude::*;
 use rand::seq::SliceRandom;
@@ -13,15 +13,6 @@ use std::collections::HashMap;
 enum MontyCard {
    Known(Card),
    Unknown,
-}
-
-impl MontyCard {
-   fn unwrap_known(self) -> Card {
-      match self {
-         MontyCard::Known(c) => c,
-         MontyCard::Unknown => unreachable!(),
-      }
-   }
 }
 
 #[derive(Debug)]
@@ -52,6 +43,7 @@ struct InformationSet {
    everyone_facedown_cards: Vec<u8>,
    cur_pile: Vec<Card>,
    turn_number: u8,
+   cur_phase: Phase,
 }
 
 impl InformationSet {
@@ -62,6 +54,7 @@ impl InformationSet {
          everyone_facedown_cards: vec![],
          cur_pile: vec![],
          turn_number: 0,
+         cur_phase: Phase::Setup,
       }
    }
 
@@ -112,7 +105,7 @@ impl InformationSet {
          face_up_three: self.everyone_faceup_cards.clone().into_boxed_slice(),
          face_down_three: determined_fdt.into_boxed_slice(),
          pile_cards: self.cur_pile.clone(),
-         cur_phase: game::Phase::Play,
+         cur_phase: self.cur_phase,
          out_players: vec![],
       }
    }
@@ -122,7 +115,7 @@ pub struct MontyAi {
    information_set: InformationSet,
    last_player: u8,
    unseen_cards: HashMap<Card, u64>,
-   last_phase: Option<game::Phase>,
+   last_phase: Option<Phase>,
    exploration_val: f64,
    num_sims: usize,
 }
@@ -167,11 +160,22 @@ fn all_moves_zone<'a>(zone: &'a [Card], v: &mut MultiVec<Card>) {
 }
 
 fn all_moves<'a>(g: &'a monte_game::GameState, v: &mut MultiVec<Card>) {
+   let active_player_hand = &g.hands[g.active_player as usize];
+   if g.cur_phase == Phase::Setup {
+      use itertools::Itertools;
+      for combo in active_player_hand.iter().copied().tuple_combinations::<(_, _, _)>() {
+         v.push_to_last_bucket(combo.0);
+         v.push_to_last_bucket(combo.1);
+         v.push_to_last_bucket(combo.2);
+         v.finalize_last_bucket();
+      }
+      return;
+   }
    if g.out_players.len() as u8 == g.num_players {
       // game over
       return;
    }
-   let active_player_hand = &g.hands[g.active_player as usize];
+   //let active_player_hand = &g.hands[g.active_player as usize];
    let active_player_fup3 = &g.face_up_three[g.active_player as usize];
    if !active_player_hand.is_empty() {
       all_moves_zone(active_player_hand, v);
@@ -275,9 +279,14 @@ impl PalaceAi for MontyAi {
    }
 
    fn choose_three_faceup(&mut self) -> Box<[Card]> {
-      let my_hand = &self.information_set.everyone_hands[self.information_set.turn_number as usize];
-      let len = my_hand.len();
-      my_hand[len - 3..].iter().map(|x| x.unwrap_known()).collect()
+      let mut unseen_cards: Vec<Card> = Vec::new();
+      for (unseen_card, quantity) in self.unseen_cards.iter() {
+         for _ in 0..*quantity {
+            unseen_cards.push(*unseen_card);
+         }
+      }
+
+      ismcts(self.num_sims * 2, self.exploration_val, &self.information_set, unseen_cards)
    }
 
    fn make_play(&mut self) -> Box<[Card]> {
@@ -310,23 +319,26 @@ impl PalaceAi for MontyAi {
                *num_unseen -= 1;
             }
          }
-         self.last_phase = Some(game::Phase::Setup)
-      } else if self.last_phase == Some(game::Phase::Setup) && new_state.cur_phase == game::Phase::Play {
-         for i in 0..new_state.face_up_three.len() {
-            self.information_set.everyone_faceup_cards[i].extend_from_slice(new_state.face_up_three[i]);
-            for card in new_state.face_up_three[i].iter() {
-               let remove_result = self.information_set.everyone_hands[i].remove_item(&(*card).into());
-               if remove_result.is_none() {
-                  self.information_set.everyone_hands[i]
-                     .remove_item(&MontyCard::Unknown)
-                     .unwrap();
-                  let num_unseen = self.unseen_cards.get_mut(&card).unwrap();
-                  debug_assert!(*num_unseen > 0);
-                  *num_unseen -= 1;
-               }
+         self.last_phase = Some(Phase::Setup)
+      } else if self.last_phase == Some(Phase::Setup) {
+         let i = self.last_player as usize;
+         let new_fup3 = &new_state.face_up_three[i];
+         self.information_set.everyone_faceup_cards[i].extend_from_slice(new_fup3);
+         for card in new_fup3.iter() {
+            let remove_result = self.information_set.everyone_hands[i].remove_item(&(*card).into());
+            if remove_result.is_none() {
+               self.information_set.everyone_hands[i]
+                  .remove_item(&MontyCard::Unknown)
+                  .unwrap();
+               let num_unseen = self.unseen_cards.get_mut(&card).unwrap();
+               debug_assert!(*num_unseen > 0);
+               *num_unseen -= 1;
             }
          }
-         self.last_phase = Some(game::Phase::Play);
+         if new_state.cur_phase == Phase::Play {
+            self.last_phase = Some(Phase::Play);
+            self.information_set.cur_phase = Phase::Play;
+         }
       }
 
       // update pile based on cards played

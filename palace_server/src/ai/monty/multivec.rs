@@ -23,8 +23,8 @@ impl<T> MultiVec<T> {
    where
       T: Clone,
    {
-      if self.index == self.inner.len() {
-         self.inner.push(Vec::new())
+      while self.index >= self.inner.len() {
+         self.inner.push(Vec::new());
       }
       self.inner[self.index].extend_from_slice(items);
       self.index += 1;
@@ -42,7 +42,22 @@ impl<T> MultiVec<T> {
       false
    }
 
+   pub fn push_to_last_bucket(&mut self, item: T) {
+      while self.index >= self.inner.len() {
+         self.inner.push(Vec::new());
+      }
+      self.inner[self.index].push(item);
+   }
+
+   pub fn finalize_last_bucket(&mut self) {
+      self.index += 1;
+   }
+
    pub fn get_valid_inner(&self) -> &[Vec<T>] {
       &self.inner[0..self.index]
+   }
+
+   pub fn len(&self) -> usize {
+      self.index
    }
 }
