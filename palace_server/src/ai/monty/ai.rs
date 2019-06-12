@@ -114,7 +114,7 @@ impl InformationSet {
 pub struct MontyAi {
    information_set: InformationSet,
    last_player: u8,
-   unseen_cards: HashMap<Card, u64>,
+   unseen_cards: HashMap<Card, usize>,
    last_phase: Option<Phase>,
    exploration_val: f64,
    num_sims: usize,
@@ -273,30 +273,25 @@ fn ismcts(num_sims: usize, exploration_val: f64, root: &InformationSet, mut unse
    tree[*best_child].last_move.clone().unwrap()
 }
 
+impl MontyAi {
+   fn get_unseen_cards_as_vec(&self) -> Vec<Card> {
+      use std::iter;
+      self.unseen_cards.iter().flat_map(|(k, v)| iter::repeat(*k).take(*v)).collect()
+   }
+}
+
 impl PalaceAi for MontyAi {
    fn strategy_name(&self) -> &'static str {
       "Monty"
    }
 
    fn choose_three_faceup(&mut self) -> Box<[Card]> {
-      let mut unseen_cards: Vec<Card> = Vec::new();
-      for (unseen_card, quantity) in self.unseen_cards.iter() {
-         for _ in 0..*quantity {
-            unseen_cards.push(*unseen_card);
-         }
-      }
-
+      let unseen_cards = self.get_unseen_cards_as_vec();
       ismcts(self.num_sims * 2, self.exploration_val, &self.information_set, unseen_cards)
    }
 
    fn make_play(&mut self) -> Box<[Card]> {
-      let mut unseen_cards: Vec<Card> = Vec::new();
-      for (unseen_card, quantity) in self.unseen_cards.iter() {
-         for _ in 0..*quantity {
-            unseen_cards.push(*unseen_card);
-         }
-      }
-
+      let unseen_cards = self.get_unseen_cards_as_vec();
       ismcts(self.num_sims, self.exploration_val, &self.information_set, unseen_cards)
    }
 
