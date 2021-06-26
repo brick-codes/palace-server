@@ -1,5 +1,3 @@
-#![feature(vec_remove_item)]
-
 mod ai;
 mod data;
 mod game;

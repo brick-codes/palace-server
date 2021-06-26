@@ -1,7 +1,9 @@
 use rand::seq::SliceRandom;
+use rand::seq::index;
 use rand::thread_rng;
 use serde_derive::{Deserialize, Serialize};
 use std::time::Instant;
+use std::usize;
 
 const HAND_SIZE: usize = 6;
 
@@ -238,7 +240,10 @@ impl GameState {
          CardZone::Hand => {
             let backup_hand = self.hands[self.active_player as usize].clone();
             for card in cards.iter() {
-               if self.hands[self.active_player as usize].remove_item(card).is_none() {
+               let index_to_remove = self.hands[self.active_player as usize].iter().position(|x| x == card);
+               if let Some(i) = index_to_remove {
+                  self.hands[self.active_player as usize].swap_remove(i);
+               } else {
                   self.hands[self.active_player as usize] = backup_hand;
                   return Err("can only play cards that you have");
                }
@@ -247,10 +252,10 @@ impl GameState {
          CardZone::FaceUpThree => {
             let backup_three = self.face_up_three[self.active_player as usize].clone();
             for card in cards.iter() {
-               if self.face_up_three[self.active_player as usize]
-                  .remove_item(card)
-                  .is_none()
-               {
+               let index_to_remove = self.face_up_three[self.active_player as usize].iter().position(|x| x == card);
+               if let Some(i) = index_to_remove {
+                  self.face_up_three[self.active_player as usize].swap_remove(i);
+               } else {
                   self.face_up_three[self.active_player as usize] = backup_three;
                   return Err("can only play cards that you have");
                }
