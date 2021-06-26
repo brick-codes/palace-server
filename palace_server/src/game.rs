@@ -1,5 +1,4 @@
 use rand::seq::SliceRandom;
-use rand::seq::index;
 use rand::thread_rng;
 use serde_derive::{Deserialize, Serialize};
 use std::time::Instant;
