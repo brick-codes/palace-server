@@ -10,9 +10,9 @@ pub mod monty;
 pub mod random;
 
 lazy_static! {
-   static ref NAMES: Vec<&'static str> = { include_str!("names.txt").lines().collect() };
-   static ref ADJECTIVES: Vec<&'static str> = { include_str!("adjectives.txt").lines().collect() };
-   static ref NOUNS: Vec<&'static str> = { include_str!("nouns.txt").lines().collect() };
+   static ref NAMES: Vec<&'static str> = include_str!("names.txt").lines().collect();
+   static ref ADJECTIVES: Vec<&'static str> = include_str!("adjectives.txt").lines().collect();
+   static ref NOUNS: Vec<&'static str> = include_str!("nouns.txt").lines().collect();
 }
 
 static LETTERS: [char; 26] = [

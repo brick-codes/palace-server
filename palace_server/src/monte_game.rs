@@ -131,7 +131,7 @@ impl GameState {
       let is_playable = is_playable_without_pickup(play_value, &self.pile_cards);
 
       // Put cards in pile
-      self.pile_cards.extend_from_slice(&cards);
+      self.pile_cards.extend_from_slice(cards);
 
       let player_out = if !is_playable {
          self.hands[self.active_player as usize].extend_from_slice(&self.pile_cards);

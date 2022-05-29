@@ -1,5 +1,3 @@
-#![feature(vec_remove_item)]
-
 pub mod ai;
 pub mod data;
 pub mod game;
@@ -121,7 +119,7 @@ struct DisconnectedState {
    reason: DisconnectedReason,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq)]
 enum DisconnectedReason {
    Kicked,
    TimedOut,
@@ -143,10 +141,7 @@ impl Player {
    }
 
    fn is_ai(&self) -> bool {
-      match self.connection {
-         Connection::Ai(_) => true,
-         _ => false,
-      }
+      matches!(self.connection, Connection::Ai(_))
    }
 }
 
@@ -183,12 +178,12 @@ fn ai_play(lobbies: &mut HashMap<LobbyId, Lobby>) {
       if let Some(ref mut gs) = lobby.game {
          if let Some(player_id) = lobby.players_by_turn_num.get(&gs.active_player) {
             let play = match lobby.players.get_mut(player_id).unwrap().connection {
-               Connection::Ai(ref mut ai) => ai::get_turn(&gs, &mut *ai.core),
+               Connection::Ai(ref mut ai) => ai::get_turn(gs, &mut *ai.core),
                _ => continue,
             };
             match gs.take_turn(&play) {
                Ok(game_finished) => {
-                  report_take_turn(&gs, &mut lobby.players, &mut lobby.spectators, *player_id);
+                  report_take_turn(gs, &mut lobby.players, &mut lobby.spectators, *player_id);
                   if game_finished {
                      end_game(lobby);
                   }
@@ -599,7 +594,7 @@ impl Server {
 
             match result {
                Ok(game_finished) => {
-                  report_take_turn(&gs, &mut lobby.players, &mut lobby.spectators, message.player_id);
+                  report_take_turn(gs, &mut lobby.players, &mut lobby.spectators, message.player_id);
                   if game_finished {
                      end_game(lobby);
                   }
@@ -608,10 +603,10 @@ impl Server {
                Err(e) => Err(TakeTurnError::GameError(e)),
             }
          } else {
-            return Err(TakeTurnError::GameNotStarted);
+            Err(TakeTurnError::GameNotStarted)
          }
       } else {
-         return Err(TakeTurnError::LobbyNotFound);
+         Err(TakeTurnError::LobbyNotFound)
       }
    }
 
@@ -673,7 +668,7 @@ impl Server {
          } else if let Some(player_id) = lobby.players_by_turn_num.get(&message.slot) {
             match lobby.game {
                Some(_) => {
-                  let player = lobby.players.get_mut(&player_id).unwrap();
+                  let player = lobby.players.get_mut(player_id).unwrap();
                   match &mut player.connection {
                      Connection::Connected(ref mut sender) => {
                         let _ = serialize_and_send(sender, &PalaceOutMessage::LobbyCloseEvent(LobbyCloseEvent::Kicked));
@@ -829,7 +824,7 @@ fn update_connected_player_info(
 fn disconnect_old_player(connected_user: &ConnectedUser, lobbies: &mut HashMap<LobbyId, Lobby>, our_sender_id: u32) {
    match connected_user {
       ConnectedUser::Player((old_lobby_id, old_player_id)) => {
-         if let Some(old_lobby) = lobbies.get_mut(&old_lobby_id) {
+         if let Some(old_lobby) = lobbies.get_mut(old_lobby_id) {
             if old_lobby.game.is_none() {
                if old_lobby.owner == *old_player_id {
                   for (_, old_player) in old_lobby.players.iter_mut().filter(|(id, _)| *id != old_player_id) {
@@ -847,11 +842,11 @@ fn disconnect_old_player(connected_user: &ConnectedUser, lobbies: &mut HashMap<L
                   for sender in &mut old_lobby.spectators {
                      let _ = serialize_and_send(sender, &PalaceOutMessage::LobbyCloseEvent(LobbyCloseEvent::OwnerLeft));
                   }
-                  lobbies.remove(&old_lobby_id);
+                  lobbies.remove(old_lobby_id);
                } else {
                   remove_player(*old_player_id, old_lobby, None);
                }
-            } else if let Some(old_player) = old_lobby.players.get_mut(&old_player_id) {
+            } else if let Some(old_player) = old_lobby.players.get_mut(old_player_id) {
                old_player.connection = Connection::Disconnected(DisconnectedState {
                   time: Instant::now(),
                   reason: DisconnectedReason::Left,
@@ -860,7 +855,7 @@ fn disconnect_old_player(connected_user: &ConnectedUser, lobbies: &mut HashMap<L
          }
       }
       ConnectedUser::Spectator(old_lobby_id) => {
-         if let Some(old_lobby) = lobbies.get_mut(&old_lobby_id) {
+         if let Some(old_lobby) = lobbies.get_mut(old_lobby_id) {
             old_lobby.spectators.retain(|x| x.connection_id() != our_sender_id);
 
             for player in old_lobby.players.values_mut() {
@@ -1111,7 +1106,7 @@ pub fn run_server(address: &'static str) {
                         players: &HashMap::new(), // Random doesn't need players
                      });
                      ai.on_game_state_update(&gs.public_state());
-                     let play = ai::get_turn(&gs, &mut *ai);
+                     let play = ai::get_turn(gs, &mut *ai);
                      let must_end_game = gs.take_turn(&play).unwrap();
                      report_take_turn(gs, &mut lobby.players, &mut lobby.spectators, player_id);
                      if must_end_game {

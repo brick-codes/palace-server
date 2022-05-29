@@ -54,13 +54,13 @@ pub struct Card {
    pub suit: CardSuit,
 }
 
-#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum Phase {
    Setup,
    Play,
 }
 
-#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum CardZone {
    Hand,
    FaceUpThree,
@@ -293,10 +293,10 @@ impl GameState {
       let is_playable = is_playable_without_pickup(play_value, &self.pile_cards);
 
       // Put cards in pile
-      self.pile_cards.extend_from_slice(&cards);
+      self.pile_cards.extend_from_slice(cards);
 
       self.last_cards_played.clear();
-      self.last_cards_played.extend_from_slice(&cards);
+      self.last_cards_played.extend_from_slice(cards);
 
       let player_out = if !is_playable {
          self.hands[self.active_player as usize].extend_from_slice(&self.pile_cards);
@@ -389,8 +389,7 @@ pub fn effective_top_card(pile: &[Card]) -> CardValue {
       .iter()
       .rev()
       .map(|x| x.value)
-      .skip_while(|x| *x == CardValue::Four)
-      .next()
+      .find(|x| *x != CardValue::Four)
       .unwrap_or(CardValue::Two)
 }
 
