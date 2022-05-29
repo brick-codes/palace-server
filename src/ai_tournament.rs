@@ -43,7 +43,7 @@ fn ai_play(game: &mut GameState, ai_core: &mut (dyn PalaceAi + Send + Sync)) -> 
    game.take_turn(&cards_to_play).unwrap()
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq)]
 enum Winner {
    Player1,
    Player2,

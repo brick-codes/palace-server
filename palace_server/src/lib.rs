@@ -1219,7 +1219,8 @@ pub fn run_server(address: &'static str) {
          // Start full lobbies that are owned by bots
          for lobby in lobbies
             .values_mut()
-            .filter(|l| l.game.is_none() && l.players.len() as u8 == l.max_players && l.players[&l.owner].is_ai())
+            // this handles the case where the lobby owner has left -- TODO: are we cleaning up old lobbies?
+            .filter(|l| l.game.is_none() && l.players.len() as u8 == l.max_players && l.players.get(&l.owner).map(|x| x.is_ai()).unwrap_or(false))
          {
             start_game(lobby);
          }
