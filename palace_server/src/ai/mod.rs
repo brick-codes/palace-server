@@ -1,10 +1,12 @@
 use crate::data::GameStartEvent;
-use crate::game::{Card, GameState, PublicGameState};
+use crate::game::{Card, GameState, Phase, PublicGameState};
 use rand::seq::SliceRandom;
 use rand::{self, thread_rng, Rng};
 
 use lazy_static::lazy_static;
 
+pub mod low_and_steady;
+pub mod monty;
 pub mod random;
 
 lazy_static! {
@@ -18,12 +20,12 @@ static LETTERS: [char; 26] = [
    'X', 'Y', 'Z',
 ];
 
-pub(crate) trait PalaceAi {
+pub trait PalaceAi {
    fn strategy_name(&self) -> &'static str;
 
-   fn choose_three_faceup(&mut self) -> (Card, Card, Card);
+   fn choose_three_faceup(&mut self) -> Box<[Card]>;
 
-   fn take_turn(&mut self) -> Box<[Card]>;
+   fn make_play(&mut self) -> Box<[Card]>;
 
    fn on_game_state_update(&mut self, _new_state: &PublicGameState) {}
 
@@ -76,10 +78,13 @@ pub(crate) fn get_bot_name_clandestine() -> String {
    name
 }
 
-pub(crate) fn get_play(gs: &GameState, ai_core: &mut (dyn PalaceAi + Send + Sync)) -> Box<[Card]> {
+pub fn get_turn(gs: &GameState, ai_core: &mut (dyn PalaceAi + Send + Sync)) -> Box<[Card]> {
    if gs.hands[gs.active_player as usize].is_empty() && gs.face_up_three[gs.active_player as usize].is_empty() {
       vec![].into_boxed_slice()
    } else {
-      ai_core.take_turn()
+      match gs.cur_phase {
+         Phase::Play => ai_core.make_play(),
+         Phase::Setup => ai_core.choose_three_faceup(),
+      }
    }
 }

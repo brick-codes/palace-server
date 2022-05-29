@@ -237,7 +237,7 @@ fn clandestine_bots_join_lobby() {
             InMessage::PlayerJoinEvent(_) => {
                break;
             }
-            _ => assert!(false),
+            _ => panic!(),
          }
       },
       21000,

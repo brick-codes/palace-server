@@ -4,10 +4,10 @@ use serde_derive::{Deserialize, Serialize};
 use std::time::Instant;
 use std::usize;
 
-const HAND_SIZE: usize = 6;
+pub const HAND_SIZE: usize = 6;
 
-#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, PartialOrd, Eq, Ord)]
-enum CardSuit {
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, PartialOrd, Eq, Ord, Hash)]
+pub enum CardSuit {
    Clubs,
    Diamonds,
    Hearts,
@@ -16,8 +16,8 @@ enum CardSuit {
 
 const SUITS: [CardSuit; 4] = [CardSuit::Clubs, CardSuit::Diamonds, CardSuit::Hearts, CardSuit::Spades];
 
-#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, PartialOrd)]
-enum CardValue {
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, PartialOrd, Eq, Ord, Hash)]
+pub enum CardValue {
    Two,
    Three,
    Four,
@@ -49,45 +49,56 @@ const VALUES: [CardValue; 13] = [
    CardValue::Ace,
 ];
 
-#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct Card {
-   value: CardValue,
-   suit: CardSuit,
+   pub value: CardValue,
+   pub suit: CardSuit,
 }
 
-#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum Phase {
    Setup,
    Play,
 }
 
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub enum CardZone {
+   Hand,
+   FaceUpThree,
+   FaceDownThree,
+}
+
 #[derive(Clone, Debug)]
 pub struct GameState {
    pub active_player: u8,
-   num_players: u8,
+   pub num_players: u8,
    pub hands: Box<[Vec<Card>]>,
    pub face_up_three: Box<[Vec<Card>]>,
-   face_down_three: Box<[Vec<Card>]>,
-   cleared_cards: Vec<Card>,
-   pile_cards: Vec<Card>,
+   pub face_down_three: Box<[Vec<Card>]>,
+   pub cleared_cards: Vec<Card>,
+   pub pile_cards: Vec<Card>,
    pub cur_phase: Phase,
-   last_cards_played: Vec<Card>,
+   pub last_cards_played: Vec<Card>,
    pub out_players: Vec<u8>,
    pub last_turn_start: Instant,
+   pub last_played_zone: Option<CardZone>,
+}
+
+pub fn new_deck(num_players: usize) -> impl Iterator<Item = Card> {
+   VALUES
+      .iter()
+      .cycle()
+      .take(num_players * VALUES.len())
+      .zip(SUITS.iter().take(num_players).cycle())
+      .map(|(value, suit)| Card {
+         suit: *suit,
+         value: *value,
+      })
 }
 
 impl GameState {
    pub fn new(num_players: u8) -> GameState {
-      let mut deck: Vec<Card> = VALUES
-         .iter()
-         .cycle()
-         .take(num_players as usize * VALUES.len())
-         .zip(SUITS.iter().take(num_players as usize).cycle())
-         .map(|(value, suit)| Card {
-            suit: *suit,
-            value: *value,
-         })
-         .collect();
+      let mut deck: Vec<Card> = new_deck(num_players as usize).collect();
       deck.shuffle(&mut thread_rng());
       let mut deck = deck.into_iter();
       let mut face_down_three = Vec::with_capacity(num_players as usize);
@@ -108,12 +119,13 @@ impl GameState {
          pile_cards: Vec::new(),
          cur_phase: Phase::Setup,
          last_cards_played: Vec::new(),
-         out_players: Vec::new(),
+         out_players: Vec::with_capacity(num_players as usize),
          last_turn_start: Instant::now(),
+         last_played_zone: None,
       }
    }
 
-   pub(crate) fn public_state(&self) -> PublicGameState {
+   pub fn public_state(&self) -> PublicGameState {
       PublicGameState {
          hands: self
             .hands
@@ -124,7 +136,7 @@ impl GameState {
          face_up_three: self
             .face_up_three
             .iter()
-            .map(|x| x.as_ref())
+            .map(std::convert::AsRef::as_ref)
             .collect::<Vec<_>>()
             .into_boxed_slice(),
          face_down_three: self
@@ -133,21 +145,31 @@ impl GameState {
             .map(|x| x.len() as u8)
             .collect::<Vec<_>>()
             .into_boxed_slice(),
-         top_card: self.pile_cards.last(),
+         top_card: self.pile_cards.last().cloned(),
          pile_size: self.pile_cards.len() as u16,
          cleared_size: self.cleared_cards.len() as u16,
          cur_phase: self.cur_phase,
          active_player: self.active_player,
          last_cards_played: &self.last_cards_played,
+         last_played_zone: self.last_played_zone,
       }
    }
 
-   pub fn choose_three_faceup(&mut self, card_one: Card, card_two: Card, card_three: Card) -> Result<(), &'static str> {
-      // Validate phase
-      if self.cur_phase != Phase::Setup {
-         return Err("Can only choose three faceup cards during Setup phase");
+   /// Return bool = whether or not the game is complete
+   pub fn take_turn(&mut self, cards: &[Card]) -> Result<bool, &'static str> {
+      match self.cur_phase {
+         Phase::Setup => {
+            if cards.len() != 3 {
+               return Err("During setup, must choose exactly three cards");
+            }
+            self.choose_three_faceup(cards[0], cards[1], cards[2])?;
+            Ok(false)
+         }
+         Phase::Play => self.make_play(cards),
       }
+   }
 
+   fn choose_three_faceup(&mut self, card_one: Card, card_two: Card, card_three: Card) -> Result<(), &'static str> {
       // Combine hand + face up cards
       let mut all_cards = self.hands[self.active_player as usize].clone();
       all_cards.extend_from_slice(&self.face_up_three[self.active_player as usize]);
@@ -176,7 +198,10 @@ impl GameState {
 
       // Mutate state
       self.face_up_three[self.active_player as usize] = vec![card_one, card_two, card_three];
+      self.face_up_three[self.active_player as usize].sort_unstable();
       self.hands[self.active_player as usize] = new_hand;
+      self.hands[self.active_player as usize].sort_unstable();
+
       self.rotate_play();
 
       if self.active_player == 0 {
@@ -187,52 +212,61 @@ impl GameState {
    }
 
    /// Return bool = whether or not the game is complete
-   pub fn make_play(&mut self, cards: Box<[Card]>) -> Result<bool, &'static str> {
-      #[derive(PartialEq)]
-      enum CardZone {
-         Hand,
-         FaceUpThree,
-         FaceDownThree,
-      }
-
-      // Validate phase
-      if self.cur_phase != Phase::Play {
-         return Err("Can only play cards during the play phase");
-      }
-
+   fn make_play(&mut self, cards: &[Card]) -> Result<bool, &'static str> {
       // Figure out which zone we are retrieving cards from
-      let (card_zone, cards) = if !self.hands[self.active_player as usize].is_empty() {
+      let hand_len = self.hands[self.active_player as usize].len();
+      let fup3_len = self.face_up_three[self.active_player as usize].len();
+      let a_card;
+      let (card_zone, cards) = if hand_len > 0 {
+         if cards.len() > hand_len {
+            return Err("Can't play more cards than you have");
+         }
          (CardZone::Hand, cards)
-      } else if !self.face_up_three[self.active_player as usize].is_empty() {
+      } else if fup3_len > 0 {
+         if cards.len() > fup3_len {
+            return Err("Can't play more cards than you have");
+         }
          (CardZone::FaceUpThree, cards)
       } else {
          if !cards.is_empty() {
             return Err("Can't choose any cards when playing from the face down three");
          }
          // In the case of face down cards, we can safely pop now as there's no way this play can fail
-         (
-            CardZone::FaceDownThree,
-            vec![self.face_down_three[self.active_player as usize].pop().unwrap()].into_boxed_slice(),
-         )
+         a_card = [self.face_down_three[self.active_player as usize].pop().unwrap()];
+         (CardZone::FaceDownThree, a_card.as_ref())
       };
 
       if cards.is_empty() {
          return Err("Have to play at least one card");
       }
 
-      if cards.windows(2).any(|cards| cards[0].value != cards[1].value) {
-         return Err("Can only play multiple cards if each card has the same value");
+      // check that play is valid
+      let play_value = cards[0].value;
+
+      for card in cards {
+         if card.value != play_value {
+            return Err("Can only play multiple cards if each card has the same value");
+         }
+
+         match card_zone {
+            CardZone::Hand => {
+               if self.hands[self.active_player as usize].binary_search(card).is_err() {
+                  return Err("can only play cards that you have");
+               }
+            }
+            CardZone::FaceUpThree => {
+               if self.face_up_three[self.active_player as usize]
+                  .binary_search(card)
+                  .is_err()
+               {
+                  return Err("can only play cards that you have");
+               }
+            }
+            CardZone::FaceDownThree => {
+               // already checked
+            }
+         }
       }
-
-      let card_value = cards[0].value;
-
-      let is_playable = match (card_value, self.effective_top_card()) {
-         (CardValue::Two, _) => true,
-         (CardValue::Four, _) => true,
-         (CardValue::Ten, y) => y != CardValue::Seven,
-         (x, CardValue::Seven) => x <= CardValue::Seven,
-         (x, y) => x >= y,
-      };
 
       // Remove cards from old zone
       match card_zone {
@@ -265,14 +299,19 @@ impl GameState {
          }
       }
 
+      self.last_played_zone = Some(card_zone);
+
+      let is_playable = is_playable_without_pickup(play_value, &self.pile_cards);
+
       // Put cards in pile
-      self.pile_cards.extend_from_slice(&cards);
+      self.pile_cards.extend_from_slice(cards);
 
       self.last_cards_played.clear();
-      self.last_cards_played.extend_from_slice(&cards);
+      self.last_cards_played.extend_from_slice(cards);
 
       let player_out = if !is_playable {
          self.hands[self.active_player as usize].extend_from_slice(&self.pile_cards);
+         self.hands[self.active_player as usize].sort_unstable();
          self.pile_cards.clear();
          false
       } else if self.hands[self.active_player as usize].is_empty()
@@ -289,7 +328,8 @@ impl GameState {
          false
       };
 
-      if card_value == CardValue::Ten || self.top_n_cards_same() {
+      if (is_playable && play_value == CardValue::Ten) || top_n_cards_same(&self.pile_cards, self.num_players as usize)
+      {
          self.cleared_cards.extend_from_slice(&self.pile_cards);
          self.pile_cards.clear();
          if player_out {
@@ -300,25 +340,6 @@ impl GameState {
       }
 
       Ok(false)
-   }
-
-   fn top_n_cards_same(&self) -> bool {
-      let top_value = if let Some(card) = self.pile_cards.last() {
-         card.value
-      } else {
-         return false;
-      };
-      let mut top_n_same = 0;
-      for card in self.pile_cards.iter().rev() {
-         if card.value == top_value {
-            top_n_same += 1;
-         } else if card.value == CardValue::Four {
-            continue;
-         } else {
-            break;
-         }
-      }
-      top_n_same == self.num_players
    }
 
    pub fn get_hand(&self, player_num: u8) -> &[Card] {
@@ -343,35 +364,58 @@ impl GameState {
       self.active_player = self.next_player();
       self.last_turn_start = Instant::now();
    }
+}
 
-   fn effective_top_card(&self) -> CardValue {
-      if self.pile_cards.is_empty() {
-         return CardValue::Two;
+pub fn top_n_cards_same(pile: &[Card], n: usize) -> bool {
+   let top_value = if let Some(card) = pile.last() {
+      card.value
+   } else {
+      return false;
+   };
+   let mut top_n_same = 0;
+   for card in pile.iter().rev() {
+      if card.value == top_value {
+         top_n_same += 1;
+      } else if card.value == CardValue::Four {
+         continue;
+      } else {
+         break;
       }
-      let mut index = self.pile_cards.len() - 1;
-      let mut effective_top_card_value = self.pile_cards[index].value;
-      while effective_top_card_value == CardValue::Four {
-         if index == 0 {
-            return CardValue::Two;
-         }
-         index -= 1;
-         effective_top_card_value = self.pile_cards[index].value;
-      }
-      effective_top_card_value
+   }
+   top_n_same >= n
+}
+
+pub fn is_playable_without_pickup(card_value: CardValue, pile: &[Card]) -> bool {
+   match (card_value, effective_top_card(pile)) {
+      (CardValue::Two, _) => true,
+      (CardValue::Four, _) => true,
+      (CardValue::Ten, y) => y != CardValue::Seven,
+      (x, CardValue::Seven) => x <= CardValue::Seven,
+      (x, y) => x >= y,
    }
 }
 
-#[derive(Serialize)]
-pub(crate) struct PublicGameState<'a> {
+pub fn effective_top_card(pile: &[Card]) -> CardValue {
+   pile
+      .iter()
+      .rev()
+      .map(|x| x.value)
+      .find(|x| *x != CardValue::Four)
+      .unwrap_or(CardValue::Two)
+}
+
+#[derive(Debug, Serialize)]
+pub struct PublicGameState<'a> {
    pub hands: Box<[u16]>,
    pub face_up_three: Box<[&'a [Card]]>,
    pub face_down_three: Box<[u8]>,
-   pub top_card: Option<&'a Card>,
+   pub top_card: Option<Card>,
    pub pile_size: u16,
    pub cleared_size: u16,
    pub cur_phase: Phase,
    pub active_player: u8,
    pub last_cards_played: &'a [Card],
+   pub last_played_zone: Option<CardZone>,
 }
 
 mod test {
@@ -392,18 +436,18 @@ mod test {
             suit: *SUITS.choose(&mut thread_rng()).unwrap(),
          };
          self.hands[self.active_player as usize] = vec![card];
-         self.make_play(vec![card].into_boxed_slice())
+         self.make_play(&[card])
       }
    }
 
    #[test]
-   fn effective_top_card() {
+   fn effective_top_card_works() {
       let mut game = GameState::new_game_skip_setup(4);
-      assert_eq!(game.effective_top_card(), CardValue::Two);
+      assert_eq!(effective_top_card(&game.pile_cards), CardValue::Two);
       assert!(game.play_card(CardValue::Three).is_ok());
-      assert_eq!(game.effective_top_card(), CardValue::Three);
+      assert_eq!(effective_top_card(&game.pile_cards), CardValue::Three);
       assert!(game.play_card(CardValue::Four).is_ok());
-      assert_eq!(game.effective_top_card(), CardValue::Three);
+      assert_eq!(effective_top_card(&game.pile_cards), CardValue::Three);
    }
 
    #[test]
@@ -482,5 +526,26 @@ mod test {
          seen_suits.dedup();
          assert_eq!(seen_suits.len() as u8, i);
       }
+   }
+
+   #[test]
+   fn playing_ten_final_card_turn_rotates() {
+      let mut game = GameState::new_game_skip_setup(4);
+      assert_eq!(game.active_player, 0);
+      game.face_up_three[0].clear();
+      game.face_down_three[0].clear();
+      game.play_card(CardValue::Ten).unwrap();
+      assert_eq!(game.active_player, 1);
+      assert!(game.out_players.contains(&0));
+   }
+
+   #[test]
+   fn playing_ten_on_top_seven_rotates() {
+      let mut game = GameState::new_game_skip_setup(3);
+      assert_eq!(game.active_player, 0);
+      game.play_card(CardValue::Seven).unwrap();
+      assert_eq!(game.active_player, 1);
+      game.play_card(CardValue::Ten).unwrap();
+      assert_eq!(game.active_player, 2);
    }
 }
